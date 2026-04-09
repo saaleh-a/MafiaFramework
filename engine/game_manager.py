@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from config.model_registry import AVAILABLE_MODELS, ModelConfig, make_client
 from engine.game_state import GameState, PlayerState
 from prompts.archetypes import ALL_ARCHETYPES, VILLAGER_ARCHETYPES
+from prompts.personalities import ALL_PERSONALITIES, DEMO_PERSONALITIES
 from agents.narrator  import NarratorAgent
 from agents.mafia     import MafiaAgent
 from agents.detective import DetectiveAgent
@@ -56,7 +57,12 @@ def _pick_archetype(role: str) -> str:
     return random.choice(ALL_ARCHETYPES)
 
 
-def create_game(narrator_model: ModelConfig | None = None) -> GameSetup:
+def _pick_personality(demo: bool = False) -> str:
+    pool = DEMO_PERSONALITIES if demo else ALL_PERSONALITIES
+    return random.choice(pool)
+
+
+def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -> GameSetup:
     # 1. Shuffle roles
     roles  = list(ROLE_DISTRIBUTION)
     names  = list(PLAYER_NAMES)
@@ -74,14 +80,20 @@ def create_game(narrator_model: ModelConfig | None = None) -> GameSetup:
         name: _pick_archetype(role_map[name]) for name in names
     }
 
+    # 3b. Assign random personality per player
+    personality_map: dict[str, str] = {
+        name: _pick_personality(demo) for name in names
+    }
+
     # 4. Build assignment table
     assignments = [
         {
-            "name":      name,
-            "role":      role_map[name],
-            "model":     model_map[name].name,
-            "short":     model_map[name].short,
-            "archetype": archetype_map[name],
+            "name":        name,
+            "role":        role_map[name],
+            "model":       model_map[name].name,
+            "short":       model_map[name].short,
+            "archetype":   archetype_map[name],
+            "personality": personality_map[name],
         }
         for name in names
     ]
@@ -101,12 +113,12 @@ def create_game(narrator_model: ModelConfig | None = None) -> GameSetup:
     # 7. Instantiate agents
     narrator  = NarratorAgent(narrator_cl)
     mafia     = [
-        MafiaAgent(m1, m2, archetype_map[m1], clients[m1]),
-        MafiaAgent(m2, m1, archetype_map[m2], clients[m2]),
+        MafiaAgent(m1, m2, archetype_map[m1], personality_map[m1], clients[m1]),
+        MafiaAgent(m2, m1, archetype_map[m2], personality_map[m2], clients[m2]),
     ]
-    detective = DetectiveAgent(detective_name, archetype_map[detective_name], clients[detective_name])
-    doctor    = DoctorAgent(doctor_name, archetype_map[doctor_name], clients[doctor_name])
-    villagers = [VillagerAgent(n, archetype_map[n], clients[n]) for n in villager_names]
+    detective = DetectiveAgent(detective_name, archetype_map[detective_name], personality_map[detective_name], clients[detective_name])
+    doctor    = DoctorAgent(doctor_name, archetype_map[doctor_name], personality_map[doctor_name], clients[doctor_name])
+    villagers = [VillagerAgent(n, archetype_map[n], personality_map[n], clients[n]) for n in villager_names]
 
     # 8. Build GameState (archetype on each PlayerState)
     game_state = GameState(
@@ -115,6 +127,7 @@ def create_game(narrator_model: ModelConfig | None = None) -> GameSetup:
                 name=name,
                 role=role_map[name],
                 archetype=archetype_map[name],
+                personality=personality_map[name],
             )
             for name in names
         }
@@ -141,11 +154,11 @@ def print_assignments(setup: GameSetup, reveal_roles: bool = False) -> None:
 
     if reveal_roles:
         print(f"\n{BOLD}{CYAN}Full Assignments (DEBUG):{RESET}")
-        print(f"  {'Player':10} {'Model':20} {'Archetype':14} {'Role'}")
-        print(f"  {'------':10} {'-----':20} {'---------':14} {'----'}")
+        print(f"  {'Player':10} {'Model':20} {'Archetype':14} {'Personality':14} {'Role'}")
+        print(f"  {'------':10} {'-----':20} {'---------':14} {'-----------':14} {'----'}")
         for a in setup.assignments:
             c = ROLE_C.get(a["role"], "")
-            print(f"  {a['name']:10} {a['model']:20} {a['archetype']:14} {c}{a['role']}{RESET}")
+            print(f"  {a['name']:10} {a['model']:20} {a['archetype']:14} {a.get('personality',''):14} {c}{a['role']}{RESET}")
         print()
     else:
         print_model_archetype_table(setup.assignments)

@@ -21,6 +21,7 @@ from prompts.frameworks import (
     BEHAVIOURAL_PSYCH,
 )
 from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT, CONVERSATIONAL_RULE
+from prompts.personalities import PERSONALITIES
 
 
 # ------------------------------------------------------------------ #
@@ -85,6 +86,40 @@ announcing their elimination or death.
 #  Voice profile block                                                 #
 # ------------------------------------------------------------------ #
 
+def _personality_block(personality: str) -> str:
+    """Build the performance-layer voice block from a personality entry."""
+    p = PERSONALITIES[personality]
+    prohibited = ", ".join(f'"{x}"' for x in p["prohibited"])
+    examples = "\n".join(f'  - "{ex}"' for ex in p["examples"])
+    accused  = "\n".join(f'  - "{ex}"' for ex in p["when_accused"])
+    return f"""
+HOW YOU SPEAK (performance layer — this controls expression, not strategy):
+{p["register"]}
+
+NEVER use these phrases or patterns: {prohibited}
+
+{ANTI_AI_STRUCTURE}
+
+Do not hedge every statement. Do not open with acknowledgement before every point.
+Vary your sentence length dramatically. Short. Then longer when you need to be.
+
+WHEN DIRECTLY ACCUSED (respond in this register):
+{accused}
+
+LATE GAME (rounds 3+):
+{p["late_game_shift"]}
+
+ROLE AWARENESS:
+{p["role_note"]}
+
+PERFORMANCE NOTE:
+{p["performance_note"]}
+
+Your voice in practice:
+{examples}
+"""
+
+
 def _voice_block(archetype_name: str) -> str:
     arc = ARCHETYPES[archetype_name]
     voice = arc["voice"]
@@ -114,8 +149,9 @@ Your voice in practice:
 #  Public builder functions                                            #
 # ------------------------------------------------------------------ #
 
-def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
+def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str = "") -> str:
     arc = ARCHETYPES[archetype]
+    voice = _personality_block(personality) if personality else _voice_block(archetype)
     return "\n\n".join([
         _mafia_goal(name, partner),
         GROUNDING_CONSTRAINT,
@@ -125,7 +161,7 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
         MACHIAVELLI,
         CARNEGIE_EXECUTION,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
-        _voice_block(archetype),
+        voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
@@ -137,8 +173,9 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
     ])
 
 
-def build_detective_prompt(name: str, archetype: str) -> str:
+def build_detective_prompt(name: str, archetype: str, personality: str = "") -> str:
     arc = ARCHETYPES[archetype]
+    voice = _personality_block(personality) if personality else _voice_block(archetype)
     return "\n\n".join([
         _detective_goal(name),
         GROUNDING_CONSTRAINT,
@@ -154,7 +191,7 @@ def build_detective_prompt(name: str, archetype: str) -> str:
             "have already reached. Never be the first to name your own certainty."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
-        _voice_block(archetype),
+        voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
@@ -166,8 +203,9 @@ def build_detective_prompt(name: str, archetype: str) -> str:
     ])
 
 
-def build_doctor_prompt(name: str, archetype: str) -> str:
+def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str:
     arc = ARCHETYPES[archetype]
+    voice = _personality_block(personality) if personality else _voice_block(archetype)
     return "\n\n".join([
         _doctor_goal(name),
         GROUNDING_CONSTRAINT,
@@ -175,7 +213,7 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
         GAME_THEORY,
         SUN_TZU,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
-        _voice_block(archetype),
+        voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
@@ -187,8 +225,9 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
     ])
 
 
-def build_villager_prompt(name: str, archetype: str) -> str:
+def build_villager_prompt(name: str, archetype: str, personality: str = "") -> str:
     arc = ARCHETYPES[archetype]
+    voice = _personality_block(personality) if personality else _voice_block(archetype)
     return "\n\n".join([
         _villager_goal(name),
         GROUNDING_CONSTRAINT,
@@ -196,7 +235,7 @@ def build_villager_prompt(name: str, archetype: str) -> str:
         CARNEGIE_VILLAGER,
         BEHAVIOURAL_PSYCH,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
-        _voice_block(archetype),
+        voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"

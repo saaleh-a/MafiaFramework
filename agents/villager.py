@@ -7,14 +7,15 @@ from engine.game_state import GameState
 class VillagerAgent:
     role = "Villager"
 
-    def __init__(self, name: str, archetype: str, client) -> None:
-        self.name      = name
-        self.archetype = archetype
-        self.session   = AgentSession()
-        self.agent     = client.as_agent(
+    def __init__(self, name: str, archetype: str, personality: str, client) -> None:
+        self.name        = name
+        self.archetype   = archetype
+        self.personality  = personality
+        self.session     = AgentSession()
+        self.agent       = client.as_agent(
             name=name,
-            description=f"Town Villager [{archetype}]",
-            instructions=build_villager_prompt(name, archetype),
+            description=f"[Villager] [{archetype}] [{personality}]",
+            instructions=build_villager_prompt(name, archetype, personality),
         )
 
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:

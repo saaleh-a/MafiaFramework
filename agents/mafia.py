@@ -7,15 +7,16 @@ from engine.game_state import GameState
 class MafiaAgent:
     role = "Mafia"
 
-    def __init__(self, name: str, partner_name: str, archetype: str, client) -> None:
+    def __init__(self, name: str, partner_name: str, archetype: str, personality: str, client) -> None:
         self.name         = name
         self.partner_name = partner_name
         self.archetype    = archetype
+        self.personality   = personality
         self.session      = AgentSession()
         self.agent        = client.as_agent(
             name=name,
-            description=f"Mafia player [{archetype}]",
-            instructions=build_mafia_prompt(name, partner_name, archetype),
+            description=f"[Mafia] [{archetype}] [{personality}]",
+            instructions=build_mafia_prompt(name, partner_name, archetype, personality),
         )
 
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:

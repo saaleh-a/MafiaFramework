@@ -7,15 +7,16 @@ from engine.game_state import GameState
 class DoctorAgent:
     role = "Doctor"
 
-    def __init__(self, name: str, archetype: str, client) -> None:
+    def __init__(self, name: str, archetype: str, personality: str, client) -> None:
         self.name           = name
         self.archetype      = archetype
+        self.personality     = personality
         self.last_protected: str | None = None
         self.session        = AgentSession()
         self.agent          = client.as_agent(
             name=name,
-            description=f"Town Doctor [{archetype}]",
-            instructions=build_doctor_prompt(name, archetype),
+            description=f"[Doctor] [{archetype}] [{personality}]",
+            instructions=build_doctor_prompt(name, archetype, personality),
         )
 
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:

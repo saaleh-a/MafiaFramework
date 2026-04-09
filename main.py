@@ -26,8 +26,8 @@ from engine.orchestrator  import MafiaGameOrchestrator
 from engine.game_log      import print_game_banner, BOLD, RESET, RED
 
 
-async def run_one_game(debug: bool, quiet: bool, reveal_roles: bool) -> str:
-    setup = create_game()
+async def run_one_game(debug: bool, quiet: bool, reveal_roles: bool, demo: bool = False) -> str:
+    setup = create_game(demo=demo)
     print_game_banner(setup.game_state.players)
     print_assignments(setup, reveal_roles=reveal_roles)
 
@@ -50,6 +50,7 @@ async def main(
     reveal_roles: bool = False,
     games:        int  = 1,
     seed:         int | None = None,
+    demo:         bool = False,
 ) -> None:
     # Validate environment before starting
     issues = validate_environment()
@@ -73,7 +74,7 @@ async def main(
         if games > 1:
             print(f"\n{BOLD}{'='*52}\n  GAME {i + 1} of {games}\n{'='*52}{RESET}")
         try:
-            winner = await run_one_game(debug, quiet, reveal_roles)
+            winner = await run_one_game(debug, quiet, reveal_roles, demo)
             results[winner] = results.get(winner, 0) + 1
         except KeyboardInterrupt:
             print("\n[Interrupted]")
@@ -99,6 +100,8 @@ if __name__ == "__main__":
     parser.add_argument("--reveal-roles", action="store_true")
     parser.add_argument("--games",        type=int, default=1)
     parser.add_argument("--seed",         type=int, default=None)
+    parser.add_argument("--demo",         action="store_true",
+                        help="Restrict personalities to demo-safe subset")
     args = parser.parse_args()
 
     asyncio.run(main(
@@ -107,4 +110,5 @@ if __name__ == "__main__":
         reveal_roles=args.reveal_roles,
         games=args.games,
         seed=args.seed,
+        demo=args.demo,
     ))
