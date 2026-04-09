@@ -192,9 +192,18 @@ class MafiaGameOrchestrator:
         if self.doctor.name in self.gs.get_alive_players():
             reasoning, action = await self.doctor.choose_protection_target(self.gs)
             alive = self.gs.get_alive_players()
-            protect_target = self._parse_target(action, alive) or action.strip()
+            protect_target = self._parse_target(action, alive)
+            if not protect_target:
+                eligible = [p for p in alive if p != self.gs.last_protected]
+                if eligible:
+                    protect_target = random.choice(eligible)
+                    print(
+                        f"  [!] {self.doctor.name}'s protection target was unparseable; "
+                        f"random fallback -> {protect_target}",
+                        file=sys.stderr,
+                    )
             # Server-side consecutive-protection enforcement
-            if protect_target == self.gs.last_protected:
+            if protect_target and protect_target == self.gs.last_protected:
                 eligible = [p for p in alive if p != self.gs.last_protected]
                 if eligible:
                     protect_target = random.choice(eligible)
@@ -203,7 +212,7 @@ class MafiaGameOrchestrator:
                         f"two nights in a row; random fallback -> {protect_target}",
                         file=sys.stderr,
                     )
-            if protect_target in alive:
+            if protect_target and protect_target in alive:
                 self.gs.doctor_protect_target = protect_target
                 self.doctor.last_protected = protect_target
             self.gs.log(self.doctor.name, "Doctor", self.doctor.archetype, reasoning, action)
