@@ -23,13 +23,13 @@ from agents.doctor    import DoctorAgent
 from agents.villager  import VillagerAgent
 
 
-PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace"]
+PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hank", "Ivy"]
 
 ROLE_DISTRIBUTION = [
     "Mafia", "Mafia",
     "Detective",
     "Doctor",
-    "Villager", "Villager", "Villager",
+    "Villager", "Villager", "Villager", "Villager", "Villager",
 ]
 
 assert len(PLAYER_NAMES) == len(ROLE_DISTRIBUTION)
