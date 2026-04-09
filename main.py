@@ -20,9 +20,10 @@ import argparse
 import random
 import sys
 
+from config.model_registry import validate_environment
 from engine.game_manager  import create_game, print_assignments
 from engine.orchestrator  import MafiaGameOrchestrator
-from engine.game_log      import print_game_banner, BOLD, RESET
+from engine.game_log      import print_game_banner, BOLD, RESET, RED
 
 
 async def run_one_game(debug: bool, quiet: bool, reveal_roles: bool) -> str:
@@ -50,6 +51,18 @@ async def main(
     games:        int  = 1,
     seed:         int | None = None,
 ) -> None:
+    # Validate environment before starting
+    issues = validate_environment()
+    for issue in issues:
+        print(f"{RED}{BOLD}WARNING:{RESET} {issue}", file=sys.stderr)
+    if any("not set" in i and "FOUNDRY_PROJECT_ENDPOINT" in i for i in issues):
+        print(
+            f"\n{RED}Cannot start without FOUNDRY_PROJECT_ENDPOINT. "
+            f"See README.md for setup instructions.{RESET}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if seed is not None:
         random.seed(seed)
         print(f"Seed: {seed}")
@@ -65,6 +78,12 @@ async def main(
         except KeyboardInterrupt:
             print("\n[Interrupted]")
             sys.exit(0)
+        except Exception as exc:
+            msg = str(exc)
+            if "DeploymentNotFound" in msg or "does not exist" in msg:
+                # Error details already printed by agents/base.py handler
+                sys.exit(1)
+            raise
 
     if games > 1:
         print(f"\n{BOLD}Results across {games} games:{RESET}")

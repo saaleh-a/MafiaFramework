@@ -52,8 +52,43 @@ def make_client(model: ModelConfig):
     from agent_framework.foundry import FoundryChatClient
     from azure.identity import AzureCliCredential
 
+    endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
+    if not endpoint:
+        raise EnvironmentError(
+            "FOUNDRY_PROJECT_ENDPOINT is not set. "
+            "Copy .env.example to .env and fill in your Azure AI Foundry project endpoint."
+        )
+
     return FoundryChatClient(
-        project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+        project_endpoint=endpoint,
         model=model.model_id,
         credential=AzureCliCredential(),
     )
+
+
+def validate_environment() -> list[str]:
+    """
+    Check that required environment variables are set.
+    Returns a list of warning/error messages (empty if everything looks good).
+    """
+    issues: list[str] = []
+
+    endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT")
+    if not endpoint:
+        issues.append(
+            "FOUNDRY_PROJECT_ENDPOINT is not set. "
+            "Set it in your .env file to your Azure AI Foundry project endpoint."
+        )
+
+    model = os.environ.get("FOUNDRY_MODEL")
+    if not model:
+        issues.append(
+            "FOUNDRY_MODEL is not set. Defaulting to 'gpt-4o-mini'. "
+            "Set it in .env to match your deployment name."
+        )
+
+    for cfg in AVAILABLE_MODELS:
+        if not cfg.model_id:
+            issues.append(f"Model '{cfg.name}' has an empty model_id.")
+
+    return issues

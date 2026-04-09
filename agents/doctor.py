@@ -1,4 +1,4 @@
-from agents.base import parse_reasoning_action
+from agents.base import run_agent_stream
 from prompts.builder import build_doctor_prompt
 from engine.game_state import GameState
 
@@ -17,7 +17,8 @@ class DoctorAgent:
         )
 
     async def day_discussion(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
-        return await self._run(
+        return await run_agent_stream(
+            self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Discussion:\n{chr(10).join(history) or 'Nothing yet.'}\n\n"
             f"Your turn. Max 80 words. Stay inconspicuous."
@@ -25,7 +26,8 @@ class DoctorAgent:
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
         targets = [p for p in game_state.get_alive_players() if p != self.name]
-        return await self._run(
+        return await run_agent_stream(
+            self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Full discussion:\n{chr(10).join(history)}\n\n"
             f"Valid targets: {', '.join(targets)}\n"
@@ -35,7 +37,8 @@ class DoctorAgent:
     async def choose_protection_target(self, game_state: GameState) -> tuple[str, str]:
         alive = game_state.get_alive_players()
         valid = [p for p in alive if p != self.last_protected]
-        reasoning, action = await self._run(
+        reasoning, action = await run_agent_stream(
+            self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"You protected {self.last_protected or 'nobody'} last night - cannot repeat.\n\n"
             f"NIGHT. Choose one player to protect.\n"
@@ -46,10 +49,3 @@ class DoctorAgent:
         if target in alive:
             self.last_protected = target
         return reasoning, action
-
-    async def _run(self, prompt: str) -> tuple[str, str]:
-        full_text = ""
-        async for chunk in self.agent.run(prompt, stream=True):
-            if chunk.text:
-                full_text += chunk.text
-        return parse_reasoning_action(full_text)
