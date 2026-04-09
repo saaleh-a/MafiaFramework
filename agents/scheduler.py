@@ -21,7 +21,7 @@ import random
 import re
 
 # Keywords that indicate a stalling quote-loop
-_LOOP_KEYWORDS = re.compile(r"\b(quote|specifics|word[- ]for[- ]word|exact\s+words|receipts)\b", re.IGNORECASE)
+_LOOP_KEYWORDS = re.compile(r"\b(quote|specifics|word[\- ]for[\- ]word|exact\s+words|receipts)\b", re.IGNORECASE)
 
 # Keywords that indicate productive forward progress
 _PROGRESS_KEYWORDS = re.compile(r"\b(VOTE:|I\s+vote|accuse|accusation|I\s+suspect)\b", re.IGNORECASE)

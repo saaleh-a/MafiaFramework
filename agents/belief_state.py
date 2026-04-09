@@ -116,7 +116,7 @@ def build_belief_prompt_injection(
         belief.summary(),
         "",
         "Before responding, update your probability estimates in your REASONING.",
-        "Format: BELIEF_UPDATE: PlayerName=0.XX for each player you're reassessing.",
+        "Format: BELIEF_UPDATE: PlayerName=0.XX (decimal probability, e.g. 0.75 or 0.3).",
     ]
 
     if archetype == "Overconfident":
