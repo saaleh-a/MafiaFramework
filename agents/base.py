@@ -77,10 +77,8 @@ async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
             _handle_api_error(exc)
             raise
 
-    # Should not reach here, but just in case:
-    if last_exc:
-        raise last_exc
-    return parse_reasoning_action(_strip_refusal(full_text))
+    # Should not reach here, but satisfy the type checker:
+    return "", ""
 
 
 def _handle_api_error(exc: Exception) -> None:

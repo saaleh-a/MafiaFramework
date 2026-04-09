@@ -105,9 +105,9 @@ class MafiaGameOrchestrator:
             if vote_target is None:
                 # Fallback: assign a random valid target when vote parsing fails
                 # (e.g. self-vote, refusal, or unparseable response)
-                valid = [p for p in alive if p != name]
-                if valid:
-                    vote_target = random.choice(valid)
+                eligible = [p for p in alive if p != name]
+                if eligible:
+                    vote_target = random.choice(eligible)
                     print(
                         f"  [!] {name}'s vote was unparseable; "
                         f"random fallback -> {vote_target}",
@@ -158,8 +158,8 @@ class MafiaGameOrchestrator:
 
         if final_kill and final_kill in self.gs.get_alive_town():
             self.gs.night_kill_target = final_kill
-        else:
-            # Fallback: if no valid kill target parsed, pick a random town member
+        elif not final_kill:
+            # Fallback only when no valid kill target was parsed at all
             town = self.gs.get_alive_town()
             self.gs.night_kill_target = town[0] if town else None
 
