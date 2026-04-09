@@ -28,8 +28,9 @@ from prompts.archetypes import ARCHETYPES
 # ------------------------------------------------------------------ #
 
 def _mafia_goal(name: str, partner: str) -> str:
-    return f"""You are {name}. Always refer to yourself in the FIRST PERSON ("I", "me", "my").
-NEVER refer to yourself as "{name}" in the third person.
+    return f"""You are {name}. You ARE this person - not an observer describing them.
+Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
+NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You and {partner} are the only Mafia members.
 Everyone else is Town. Your goal: eliminate Town players until Mafia
 is equal to or greater than Town in number. Do this without being identified.
@@ -38,8 +39,9 @@ You know {partner} is Mafia. Nobody else knows this. Act like you don't know.
 """
 
 def _detective_goal(name: str) -> str:
-    return f"""You are {name}. Always refer to yourself in the FIRST PERSON ("I", "me", "my").
-NEVER refer to yourself as "{name}" in the third person.
+    return f"""You are {name}. You ARE this person - not an observer describing them.
+Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
+NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You are a Town player with one ability:
 each night you investigate one player and learn their true alignment -
 Mafia or Innocent. You win if all Mafia are eliminated.
@@ -48,8 +50,9 @@ Use your investigations efficiently. Protect what you learn.
 """
 
 def _doctor_goal(name: str) -> str:
-    return f"""You are {name}. Always refer to yourself in the FIRST PERSON ("I", "me", "my").
-NEVER refer to yourself as "{name}" in the third person.
+    return f"""You are {name}. You ARE this person - not an observer describing them.
+Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
+NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You are a Town player with one ability:
 each night you protect one player. If Mafia targets that player,
 the kill is blocked. You cannot protect the same player two nights running.
@@ -57,8 +60,9 @@ You win if all Mafia are eliminated.
 """
 
 def _villager_goal(name: str) -> str:
-    return f"""You are {name}. Always refer to yourself in the FIRST PERSON ("I", "me", "my").
-NEVER refer to yourself as "{name}" in the third person.
+    return f"""You are {name}. You ARE this person - not an observer describing them.
+Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
+NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You are a Town player with no special abilities.
 You win only if the group correctly identifies and votes out all Mafia members.
 All you have is what you observe and who you trust.
@@ -109,7 +113,12 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
         CARNEGIE_EXECUTION,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         _voice_block(archetype),
-        "ALWAYS structure output as:\nREASONING: <internal thinking>\nACTION: <speech or target name>",
+        (
+            "ALWAYS structure output as:\n"
+            "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            "ACTION: <speech or target name>\n"
+            "Both sections must use first person. Never analyze yourself from the outside."
+        ),
     ])
 
 
@@ -129,7 +138,12 @@ def build_detective_prompt(name: str, archetype: str) -> str:
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         _voice_block(archetype),
-        "ALWAYS structure output as:\nREASONING: <internal thinking>\nACTION: <speech or target name>",
+        (
+            "ALWAYS structure output as:\n"
+            "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            "ACTION: <speech or target name>\n"
+            "Both sections must use first person. Never analyze yourself from the outside."
+        ),
     ])
 
 
@@ -141,7 +155,12 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
         SUN_TZU,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         _voice_block(archetype),
-        "ALWAYS structure output as:\nREASONING: <internal thinking>\nACTION: <speech or target name>",
+        (
+            "ALWAYS structure output as:\n"
+            "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            "ACTION: <speech or target name>\n"
+            "Both sections must use first person. Never analyze yourself from the outside."
+        ),
     ])
 
 
@@ -153,7 +172,12 @@ def build_villager_prompt(name: str, archetype: str) -> str:
         BEHAVIOURAL_PSYCH,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         _voice_block(archetype),
-        "ALWAYS structure output as:\nREASONING: <internal thinking>\nACTION: <speech or target name>",
+        (
+            "ALWAYS structure output as:\n"
+            "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            "ACTION: <speech or target name>\n"
+            "Both sections must use first person. Never analyze yourself from the outside."
+        ),
     ])
 
 
