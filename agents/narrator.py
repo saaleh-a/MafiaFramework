@@ -1,4 +1,5 @@
 from agents.base import run_agent_stream
+from agent_framework import AgentSession
 from prompts.builder import build_narrator_prompt
 from engine.game_state import GameState
 
@@ -9,6 +10,7 @@ class NarratorAgent:
     archetype = "Impartial"
 
     def __init__(self, client) -> None:
+        self.session = AgentSession()
         self.agent = client.as_agent(
             name="Narrator",
             description="Impartial omniscient game master",
@@ -21,4 +23,4 @@ class NarratorAgent:
             f"{game_state.get_omniscient_state_summary()}\n\n"
             f"Task: {prompt}"
         )
-        return await run_agent_stream(self.agent, context)
+        return await run_agent_stream(self.agent, context, session=self.session)
