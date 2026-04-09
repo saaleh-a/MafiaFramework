@@ -209,24 +209,15 @@ def build_villager_prompt(name: str, archetype: str) -> str:
 
 
 def build_narrator_prompt() -> str:
-    # Build a minimal banned-phrases list for the narrator (subset of global)
-    narrator_banned = [
-        "vibrant", "nestled", "breathtaking", "renowned", "captivates",
-        "testament", "enduring", "pivotal", "showcasing", "exemplifies",
-        "tapestry", "landscape", "profound", "groundbreaking",
-        "In conclusion", "In summary", "It's worth noting",
-    ]
-    banned_str = ", ".join(f'"{p}"' for p in narrator_banned)
+    banned_str = ", ".join(f'"{p}"' for p in NEGATIVE_CONSTRAINTS)
     return "\n\n".join([
         _narrator_goal(),
         (
             "WRITING RULES:\n"
             "Do not use promotional language. Do not puff up significance.\n"
-            "Do not use the rule of three. Do not end sentences with "
-            "'-ing' clauses like 'highlighting' or 'showcasing'.\n"
             "Use plain words: 'is' not 'serves as', 'has' not 'boasts'.\n"
-            "One em dash maximum per announcement. No emoji.\n"
-            "Do not use: " + banned_str
+            "NEVER use these phrases or patterns: " + banned_str
         ),
+        ANTI_AI_STRUCTURE,
         "ALWAYS structure output as:\nREASONING: <internal planning>\nACTION: <announcement text>",
     ])
