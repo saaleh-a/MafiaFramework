@@ -1,4 +1,4 @@
-from agents.base import parse_reasoning_action
+from agents.base import run_agent_stream
 from prompts.builder import build_narrator_prompt
 from engine.game_state import GameState
 
@@ -21,8 +21,4 @@ class NarratorAgent:
             f"{game_state.get_omniscient_state_summary()}\n\n"
             f"Task: {prompt}"
         )
-        full_text = ""
-        async for chunk in self.agent.run(context, stream=True):
-            if chunk.text:
-                full_text += chunk.text
-        return parse_reasoning_action(full_text)
+        return await run_agent_stream(self.agent, context)
