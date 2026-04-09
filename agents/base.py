@@ -63,7 +63,7 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     # is missing.  Absorb the text into reasoning and return an empty
     # action so the retry logic can fire.
     if action.upper().startswith("REASONING:"):
-        leaked = action.split("REASONING:", 1)[1].strip()
+        leaked = action[len("REASONING:"):].strip()
         reasoning = f"{reasoning} {leaked}".strip()
         action = ""
 
