@@ -22,15 +22,38 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
         )
 
     if len(history) == 1:
+        last_speaker = _extract_name(history[0])
+        if last_speaker == agent_name:
+            return (
+                f"Discussion:\n{history[0]}\n\n"
+                f"^ That was you. Wait for others to respond, then react."
+            )
         return (
             f"Discussion:\n{history[0]}\n\n"
-            f"^ {_extract_name(history[0])} just spoke. "
+            f"^ {last_speaker} just spoke. "
             f"Respond directly to what they said."
         )
 
     earlier = "\n".join(history[:-1])
     last = history[-1]
     last_speaker = _extract_name(last)
+
+    if last_speaker == agent_name:
+        # Find the last message from someone else
+        other_msgs = [h for h in history if not h.startswith(f"{agent_name}:")]
+        if other_msgs:
+            respond_to = other_msgs[-1]
+            respond_name = _extract_name(respond_to)
+            return (
+                f"Earlier discussion:\n{earlier}\n\n"
+                f"LAST MESSAGE:\n{last}\n\n"
+                f"^ That was you. Respond to what {respond_name} said earlier, "
+                f"or address someone else in the room."
+            )
+        return (
+            f"Full discussion:\n{chr(10).join(history)}\n\n"
+            f"Address someone specific by name."
+        )
 
     return (
         f"Earlier discussion:\n{earlier}\n\n"

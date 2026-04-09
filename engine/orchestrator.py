@@ -121,15 +121,18 @@ class MafiaGameOrchestrator:
                     continue
                 agent = self._agents[name]
 
-                # Belief State: inject belief prompt into discussion context
+                # Belief State: build belief prompt for this agent
                 belief = self._beliefs.get(name)
-                belief_injection = ""
+                belief_prefix = ""
                 if belief:
-                    belief_injection = "\n\n" + build_belief_prompt_injection(
-                        belief, agent.archetype,
+                    belief_prefix = (
+                        build_belief_prompt_injection(belief, agent.archetype)
+                        + "\n\n"
                     )
 
-                reasoning, action = await agent.day_discussion(self.gs, discussion_history)
+                reasoning, action = await agent.day_discussion(
+                    self.gs, discussion_history, belief_prefix=belief_prefix,
+                )
 
                 # Parse and apply belief updates from reasoning
                 if belief and reasoning:

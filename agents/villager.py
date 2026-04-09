@@ -17,11 +17,12 @@ class VillagerAgent:
             instructions=build_villager_prompt(name, archetype),
         )
 
-    async def day_discussion(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
+    async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:
         discussion = format_discussion_prompt(history, self.name)
         return await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
+            f"{belief_prefix}"
             f"{discussion}\n\n"
             f"Your turn. Max 80 words.",
             session=self.session,
