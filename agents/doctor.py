@@ -10,7 +10,7 @@ class DoctorAgent:
     def __init__(self, name: str, archetype: str, personality: str, client) -> None:
         self.name           = name
         self.archetype      = archetype
-        self.personality     = personality
+        self.personality    = personality
         self.last_protected: str | None = None
         self.session        = AgentSession()
         self.agent          = client.as_agent(

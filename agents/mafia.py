@@ -11,7 +11,7 @@ class MafiaAgent:
         self.name         = name
         self.partner_name = partner_name
         self.archetype    = archetype
-        self.personality   = personality
+        self.personality  = personality
         self.session      = AgentSession()
         self.agent        = client.as_agent(
             name=name,
