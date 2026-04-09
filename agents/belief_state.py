@@ -102,7 +102,7 @@ _OVERCONFIDENT_MARKERS = [
 
 def should_gate_overconfidence(
     archetype: str,
-    belief: BayesianBelief,
+    belief: SuspicionState,
     target_name: str | None,
 ) -> bool:
     """
@@ -118,7 +118,7 @@ def should_gate_overconfidence(
 
 
 def build_belief_prompt_injection(
-    belief: BayesianBelief,
+    belief: SuspicionState,
     archetype: str,
 ) -> str:
     """
@@ -168,7 +168,7 @@ def parse_belief_updates(reasoning_text: str) -> dict[str, float]:
     return updates
 
 
-def apply_overconfidence_gate(action_text: str, belief: BayesianBelief) -> str:
+def apply_overconfidence_gate(action_text: str, belief: SuspicionState) -> str:
     """
     If the action contains overconfident markers about a player
     whose certainty is below 0.7, soften the language.
@@ -190,3 +190,7 @@ def apply_overconfidence_gate(action_text: str, belief: BayesianBelief) -> str:
                 )
                 break
     return action_text
+
+
+# Backward-compat alias (orchestrator and tests may still import this name)
+BayesianBelief = SuspicionState

@@ -21,7 +21,7 @@ from agents.detective import DetectiveAgent
 from agents.doctor    import DoctorAgent
 from agents.villager  import VillagerAgent
 from agents.belief_state import (
-    BayesianBelief,
+    SuspicionState,
     build_belief_prompt_injection,
     parse_belief_updates,
     apply_overconfidence_gate,
@@ -54,11 +54,11 @@ class MafiaGameOrchestrator:
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
 
-        # Belief State: each agent maintains Bayesian probability estimates
+        # Suspicion State: each agent tracks suspicion levels (structured intuition)
         player_names = list(game_state.players.keys())
-        self._beliefs: dict[str, BayesianBelief] = {}
+        self._beliefs: dict[str, SuspicionState] = {}
         for name in player_names:
-            belief = BayesianBelief()
+            belief = SuspicionState()
             # Exclude self from suspicion tracking
             others = [n for n in player_names if n != name]
             belief.initialize(others, num_mafia=2)
