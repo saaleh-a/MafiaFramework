@@ -24,17 +24,23 @@ class ModelConfig:
     short: str      # 3-char label for tables
 
 
+# Resolve deployment names from environment.
+# FOUNDRY_MODEL is the primary deployment; FOUNDRY_MODEL_4O falls back to it
+# so that single-deployment setups work out of the box.
+_primary_model = os.environ.get("FOUNDRY_MODEL", "gpt-4o-mini")
+_secondary_model = os.environ.get("FOUNDRY_MODEL_4O", _primary_model)
+
 # Add/remove entries to match what you've actually deployed.
 # All must exist in your Foundry project.
 AVAILABLE_MODELS: list[ModelConfig] = [
     ModelConfig(
         name="GPT-4o-mini",
-        model_id=os.environ.get("FOUNDRY_MODEL", "gpt-4o-mini"),
+        model_id=_primary_model,
         short="4om",
     ),
     ModelConfig(
         name="GPT-4o",
-        model_id=os.environ.get("FOUNDRY_MODEL_4O", "gpt-4o"),
+        model_id=_secondary_model,
         short="4o ",
     ),
 ]
@@ -85,6 +91,12 @@ def validate_environment() -> list[str]:
         issues.append(
             "FOUNDRY_MODEL is not set. Defaulting to 'gpt-4o-mini'. "
             "Set it in .env to match your deployment name."
+        )
+
+    if not os.environ.get("FOUNDRY_MODEL_4O"):
+        issues.append(
+            f"FOUNDRY_MODEL_4O is not set. Falling back to FOUNDRY_MODEL ('{_primary_model}'). "
+            "Set FOUNDRY_MODEL_4O in .env if you have a separate GPT-4o deployment."
         )
 
     for cfg in AVAILABLE_MODELS:

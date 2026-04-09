@@ -197,7 +197,7 @@ MafiaFramework/
    |----------------------------|----------|----------------------------------------------------------------|
    | `FOUNDRY_PROJECT_ENDPOINT` | Yes      | Your Azure AI Foundry project endpoint URL                     |
    | `FOUNDRY_MODEL`            | No       | Default model deployment name (defaults to `gpt-4o-mini`)      |
-   | `FOUNDRY_MODEL_4O`         | No       | Secondary model deployment name (defaults to `gpt-4o`)         |
+   | `FOUNDRY_MODEL_4O`         | No       | Secondary model deployment name (defaults to `FOUNDRY_MODEL`)  |
 
    > **Important:** The model names must exactly match deployed model names in your Azure AI Foundry project.
 
@@ -369,7 +369,7 @@ for this resource does not exist.', 'code': 'DeploymentNotFound'}}
 **Fix:**
 1. Open your Azure AI Foundry project and verify the exact deployment names.
 2. Update `FOUNDRY_MODEL` and/or `FOUNDRY_MODEL_4O` in your `.env` to match.
-3. If you only have one model deployed, edit `config/model_registry.py` to include only that model in `AVAILABLE_MODELS`.
+3. If you only have one model deployed, just set `FOUNDRY_MODEL`; `FOUNDRY_MODEL_4O` will automatically fall back to it.
 4. If you just created a deployment, wait approximately 5 minutes and retry.
 5. Run `python check.py` to verify connectivity before starting a game.
 
