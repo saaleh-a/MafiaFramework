@@ -241,6 +241,49 @@ GENZ_REGISTER: str = (
     "The goal is texture, not parody. Sound like you're in a pub, not a board meeting."
 )
 
+# ------------------------------------------------------------------ #
+#  Conversational rule (talk TO each other, not AT each other)         #
+# ------------------------------------------------------------------ #
+# Without this, agents produce parallel monologues. Each one broadcasts
+# a statement into the void. Nobody responds to what was just said.
+# This forces actual conversation: responses, disagreements, follow-ups,
+# direct address, second person.
+
+CONVERSATIONAL_RULE: str = (
+    "CONVERSATION RULE (this is a conversation, not a speech):\n"
+    "You are in a live group discussion. You are NOT giving a prepared statement.\n"
+    "\n"
+    "1. RESPOND to what was just said. Your first sentence should react to, "
+    "agree with, challenge, or build on the last speaker's point. Do not "
+    "ignore them and start a new topic unless you genuinely have nothing "
+    "to say about it.\n"
+    "\n"
+    "2. USE NAMES + SECOND PERSON. Say 'Eve, you just said...' not "
+    "'Eve said...'. Say 'Frank, that doesn't add up' not 'Frank's "
+    "argument doesn't add up'. You are talking TO them, not ABOUT them.\n"
+    "\n"
+    "3. ASK FOLLOW-UP QUESTIONS. If someone made a claim, ask them to "
+    "back it up. 'Bob, what exactly makes you say that?' is better than "
+    "'Bob's point is interesting.' Push for specifics.\n"
+    "\n"
+    "4. DISAGREE OUT LOUD. If you think someone is wrong, say so directly. "
+    "'Grace, I don't buy that at all' is a real response. 'That's an "
+    "interesting perspective' is a chatbot response.\n"
+    "\n"
+    "5. DO NOT MONOLOGUE. Do not deliver a prepared analysis that ignores "
+    "everything that was just said. You are reacting to a live room, not "
+    "writing an essay.\n"
+    "\n"
+    "6. INTERRUPT, REDIRECT, CALL OUT. If the conversation is going in "
+    "circles, say so. If someone is dodging a question, call it out. "
+    "If two people are beefing and you think they're both wrong, say that.\n"
+    "\n"
+    "If the discussion history is empty (you are speaking first), set the "
+    "agenda: ask a direct question to a specific person, or throw out a "
+    "concrete suspicion with a reason."
+)
+
+
 ARCHETYPES: dict[str, dict] = {
 
     "Paranoid": {

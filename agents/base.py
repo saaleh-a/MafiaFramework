@@ -5,6 +5,47 @@ import sys
 
 from agent_framework import AgentSession
 
+
+def format_discussion_prompt(history: list[str], agent_name: str) -> str:
+    """
+    Format discussion history to encourage conversational responses.
+
+    Separates the last message from earlier discussion so the agent
+    knows exactly who just spoke and what they said — making it natural
+    to respond TO that person rather than monologuing past them.
+    """
+    if not history:
+        return (
+            "Discussion:\nNobody has spoken yet. You are first.\n"
+            "Pick someone by name and ask them a direct question, "
+            "or throw out a concrete suspicion with a reason."
+        )
+
+    if len(history) == 1:
+        return (
+            f"Discussion:\n{history[0]}\n\n"
+            f"^ {_extract_name(history[0])} just spoke. "
+            f"Respond directly to what they said."
+        )
+
+    earlier = "\n".join(history[:-1])
+    last = history[-1]
+    last_speaker = _extract_name(last)
+
+    return (
+        f"Earlier discussion:\n{earlier}\n\n"
+        f"LAST MESSAGE (respond to this):\n{last}\n\n"
+        f"^ {last_speaker} just said that. Talk TO them. "
+        f"Agree, disagree, ask a follow-up, or challenge them directly."
+    )
+
+
+def _extract_name(line: str) -> str:
+    """Extract speaker name from a 'Name: message' line."""
+    if ":" in line:
+        return line.split(":", 1)[0].strip()
+    return "Someone"
+
 # Patterns that indicate a content-filter refusal from the model
 _REFUSAL_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"I'm sorry,?\s*but I cannot assist", re.IGNORECASE),

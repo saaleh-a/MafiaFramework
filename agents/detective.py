@@ -1,4 +1,4 @@
-from agents.base import run_agent_stream
+from agents.base import run_agent_stream, format_discussion_prompt
 from agent_framework import AgentSession
 from prompts.builder import build_detective_prompt
 from engine.game_state import GameState
@@ -23,11 +23,12 @@ class DetectiveAgent:
 
     async def day_discussion(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
         findings_text = "\n".join(f"  {k}: {v}" for k, v in self.findings.items()) or "  Nothing yet."
+        discussion = format_discussion_prompt(history, self.name)
         return await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Your private investigation log:\n{findings_text}\n\n"
-            f"Discussion:\n{chr(10).join(history) or 'Nothing yet.'}\n\n"
+            f"{discussion}\n\n"
             f"Your turn. Max 80 words.",
             session=self.session,
         )

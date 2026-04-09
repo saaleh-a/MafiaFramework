@@ -20,7 +20,7 @@ from prompts.frameworks import (
     CARNEGIE_VILLAGER,
     BEHAVIOURAL_PSYCH,
 )
-from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT
+from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT, CONVERSATIONAL_RULE
 
 
 # ------------------------------------------------------------------ #
@@ -119,6 +119,7 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
     return "\n\n".join([
         _mafia_goal(name, partner),
         GROUNDING_CONSTRAINT,
+        CONVERSATIONAL_RULE,
         GAME_THEORY,
         SUN_TZU,
         MACHIAVELLI,
@@ -141,6 +142,7 @@ def build_detective_prompt(name: str, archetype: str) -> str:
     return "\n\n".join([
         _detective_goal(name),
         GROUNDING_CONSTRAINT,
+        CONVERSATIONAL_RULE,
         GAME_THEORY,
         SUN_TZU,
         # Partial Carnegie - just the blending-in elements
@@ -169,6 +171,7 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
     return "\n\n".join([
         _doctor_goal(name),
         GROUNDING_CONSTRAINT,
+        CONVERSATIONAL_RULE,
         GAME_THEORY,
         SUN_TZU,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
@@ -189,6 +192,7 @@ def build_villager_prompt(name: str, archetype: str) -> str:
     return "\n\n".join([
         _villager_goal(name),
         GROUNDING_CONSTRAINT,
+        CONVERSATIONAL_RULE,
         CARNEGIE_VILLAGER,
         BEHAVIOURAL_PSYCH,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
