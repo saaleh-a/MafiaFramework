@@ -21,12 +21,75 @@ CHARMING is added to cover the Carnegie-execution archetype.
 # ------------------------------------------------------------------ #
 #  Global negative constraints (banned AIisms)                         #
 # ------------------------------------------------------------------ #
-# These phrases are banned across ALL archetypes. They are the biggest
-# "tell" that an LLM is generating text. If your agent sounds like a
-# LinkedIn post or a quarterly review, it deserves to get voted out.
+# Based on Wikipedia's "Signs of AI writing" guide. These are the
+# phrases and vocabulary that mark text as LLM-generated. One marker
+# is coincidence. Several stacked = almost certainly AI.
+#
+# If your agent sounds like a LinkedIn post, a quarterly review, or a
+# tourism brochure, it deserves to get voted out. Fix the register
+# or stop playing.
 
 NEGATIVE_CONSTRAINTS: list[str] = [
+    # --- Communication-layer tells (§5) ---
+    # Collaborative meta-comms, disclaimers, didactic tics
     "It's worth noting",
+    "it's important to note",
+    "it's important to consider",
+    "it's important to remember",
+    "it's crucial to note",
+    "it's critical to note",
+    "worth noting",
+    "I hope this helps",
+    "Of course!",
+    "Certainly!",
+    "You're absolutely right",
+    "Would you like",
+    "is there anything else",
+    "let me know",
+    "Great question",
+    "That's a great point",
+    "I appreciate your perspective",
+    "In summary",
+    "In conclusion",
+    "To summarize",
+    "Overall",
+    "may vary",
+
+    # --- AI vocabulary (§3.1) frequency-spiked post-2023 ---
+    "Additionally",   # sentence-initial
+    "align with",
+    "crucial",
+    "delve",
+    "emphasizing",
+    "enduring",
+    "enhance",
+    "fostering",
+    "garner",
+    "highlight",       # as verb in analytic mode
+    "interplay",
+    "intricate",
+    "intricacies",
+    "landscape",       # abstract use
+    "pivotal",
+    "showcase",
+    "tapestry",        # abstract use
+    "testament",
+    "underscore",      # as verb
+    "vibrant",
+    "Essentially",
+    "Fundamentally",
+
+    # --- Copula avoidance (§3.2) ---
+    # LLMs substitute these for plain is/are/has
+    "serves as",
+    "stands as",
+    "marks a",
+    "represents a",
+    "boasts",
+    "features a",
+    "offers a",
+
+    # --- Management-speak / AI meeting-talk ---
     "I'm noticing a pattern",
     "Let's be methodical",
     "I need a concrete target",
@@ -36,22 +99,109 @@ NEGATIVE_CONSTRAINTS: list[str] = [
     "At the end of the day",
     "Moving forward",
     "I want to highlight",
-    "It's important to consider",
     "Based on my analysis",
     "From a strategic standpoint",
     "I'd like to point out",
-    "To summarize",
-    "In conclusion",
-    "Absolutely",
-    "Great question",
-    "That's a great point",
-    "I appreciate your perspective",
     "Let me break this down",
     "Here's the thing",
-    "Essentially",
-    "Fundamentally",
     "It's crucial that",
+    "Absolutely",
+
+    # --- Promotional / tonal tells (§2) ---
+    "profound",
+    "groundbreaking",
+    "renowned",
+    "breathtaking",
+    "captivates",
+    "dynamic hub",
+    "gateway to",
+    "nestled",
+    "in the heart of",
+    "exemplifies",
+    "commitment to",
+    "natural beauty",
+    "showcasing",
+
+    # --- Significance puffery (§1.1) ---
+    "is a testament",
+    "is a reminder",
+    "plays a vital role",
+    "plays a crucial role",
+    "plays a pivotal role",
+    "plays a key role",
+    "underscores its importance",
+    "highlights its importance",
+    "reflects broader",
+    "symbolizing its enduring",
+    "contributing to the",
+    "setting the stage for",
+    "key turning point",
+    "evolving landscape",
+    "focal point",
+    "indelible mark",
+    "deeply rooted",
+
+    # --- Vague attribution (§1.4) ---
+    "experts argue",
+    "observers have cited",
+    "scholars note",
+    "some critics argue",
+    "has been described as",
+    "industry reports",
+    "several sources",
 ]
+
+# ------------------------------------------------------------------ #
+#  Structural rules (anti-AI writing patterns)                         #
+# ------------------------------------------------------------------ #
+# These are not banned phrases but structural instructions injected
+# into every voice block. Based on the "Signs of AI writing" audit
+# workflow.
+
+ANTI_AI_STRUCTURE: str = (
+    "ANTI-AI WRITING RULES (follow these or you sound like a chatbot):\n"
+    "1. NO rule of three. Never list exactly three things. Pick one or vary.\n"
+    "2. NO trailing -ing clauses. Do not end sentences with "
+    "'highlighting X', 'emphasizing Y', 'reflecting Z'. Cut the tail.\n"
+    "3. NO negative parallelisms. Do not write 'not just X but Y' or "
+    "'not X but rather Y'. State the positive claim directly.\n"
+    "4. NO copula avoidance. Use 'is', 'are', 'has'. Not 'serves as', "
+    "'stands as', 'boasts', 'features'.\n"
+    "5. NO significance puffery. Do not claim anything 'represents', "
+    "'marks', or 'contributes to' something broader.\n"
+    "6. NO em dash overuse. Use commas or full stops. One em dash per "
+    "message maximum.\n"
+    "7. NO elegant variation. Do not rotate synonyms for the same person "
+    "or concept. Use their name or 'they'.\n"
+    "8. NO false ranges. Do not write 'from X to Y' unless X and Y form "
+    "a real scale.\n"
+    "9. PLAIN WORDS. Use 'is' not 'serves as'. Use 'important' not "
+    "'pivotal'. Use 'shows' not 'showcases'. Use 'old' not 'enduring'.\n"
+    "10. VARY SENTENCE SHAPE. Do not structure every message as: "
+    "preamble then reasoning then conclusion. Start mid-thought sometimes. "
+    "End abruptly sometimes.\n"
+    "11. NO emoji in your speech. Not one. You are a person, not a Notion page."
+)
+
+# ------------------------------------------------------------------ #
+#  Grounding constraint (anti-confabulation)                           #
+# ------------------------------------------------------------------ #
+# The biggest failure mode: agents referencing "pre-day chat" or
+# events that never happened. This constraint forces agents to only
+# cite things present in the actual discussion history.
+
+GROUNDING_CONSTRAINT: str = (
+    "GROUNDING RULE (critical - violating this makes you sound insane):\n"
+    "You have ZERO memory of anything not shown in the Discussion section above. "
+    "There was no 'pre-day chat'. There was no 'earlier conversation'. "
+    "If it is not printed in the discussion history you were given, IT DID NOT HAPPEN. "
+    "Do not say 'I noticed earlier' unless 'earlier' is literally visible in the history. "
+    "Do not say 'in pre-day' - there is no pre-day. "
+    "Do not claim anyone said something unless you can see it word-for-word in the history. "
+    "If you have no evidence yet, say so. Do not invent evidence. "
+    "Fabricating quotes or events that are not in the provided history is the single "
+    "fastest way to get identified as an AI and voted out."
+)
 
 # ------------------------------------------------------------------ #
 #  GenZ register injection (North London flavour)                      #

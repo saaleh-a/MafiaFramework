@@ -1,18 +1,26 @@
 """
 agents/belief_state.py
 -----------------------
-Bayesian Belief State layer for Mafia agents.
+Belief State layer for Mafia agents.
 
-Each agent maintains a dictionary of player_name -> probability_of_mafia.
-A middleware hook intercepts every agent run and prompts the agent to
-update its beliefs before generating a response.
+Each agent maintains a dictionary of player_name -> suspicion_level.
+A prompt injection asks the agent to update its estimates before
+generating a response, citing the specific observed evidence.
 
-If an agent's certainty for a target is below 0.7, the Overconfident
-archetype voice is suppressed (declarative certainty is gated).
+This is NOT Bayesian inference. There is no likelihood function, no
+conditional probability calculation, no Bayes' theorem. The LLM picks
+numbers based on its reading of the conversation. It is "structured
+intuition" — better than nothing, worse than real probability theory.
 
-The "Dual-Process" approach:
+What it does do:
+  - Forces agents to think about suspicion levels before speaking
+  - Gates the Overconfident archetype when certainty is low
+  - Creates a paper trail of how reads evolved across rounds
+  - Requires evidence citations, reducing confabulation
+
+The "Dual-Process" framing:
   - System 1 (fast/intuitive): the agent's immediate response
-  - System 2 (deliberate/probabilistic): the Bayesian update check
+  - System 2 (deliberate): the forced suspicion-update check
 """
 
 from __future__ import annotations
@@ -23,7 +31,13 @@ from dataclasses import dataclass, field
 
 @dataclass
 class BayesianBelief:
-    """Tracks per-player probability of being Mafia."""
+    """
+    Tracks per-player suspicion levels.
+
+    Despite the name (kept for backward compatibility), this is not
+    Bayesian inference. It is structured intuition: the LLM assigns
+    numbers based on conversational evidence, not conditional probability.
+    """
 
     probabilities: dict[str, float] = field(default_factory=dict)
     update_count: int = 0
@@ -107,16 +121,19 @@ def build_belief_prompt_injection(
 ) -> str:
     """
     Build a prompt fragment that:
-    1. Shows the agent their current belief state
-    2. Asks them to update probabilities in their REASONING
+    1. Shows the agent their current suspicion state
+    2. Asks them to update levels in their REASONING with evidence
     3. Gates overconfident declarations if certainty is low
     """
     parts = [
-        "BELIEF STATE UPDATE (System 2 check):",
+        "SUSPICION CHECK (System 2 — slow down and think):",
         belief.summary(),
         "",
-        "Before responding, update your probability estimates in your REASONING.",
-        "Format: BELIEF_UPDATE: PlayerName=0.XX (decimal probability, e.g. 0.75 or 0.3).",
+        "Before responding, update your suspicion estimates in your REASONING.",
+        "You MUST cite evidence from the discussion history for any change.",
+        "Format: BELIEF_UPDATE: PlayerName=0.XX because [what they said/did in the discussion above].",
+        "If you have no evidence for a player, do not change their number.",
+        "Do NOT invent evidence. Only cite things visible in the discussion history.",
     ]
 
     if archetype == "Overconfident":

@@ -20,7 +20,7 @@ from prompts.frameworks import (
     CARNEGIE_VILLAGER,
     BEHAVIOURAL_PSYCH,
 )
-from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER
+from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT
 
 
 # ------------------------------------------------------------------ #
@@ -99,9 +99,10 @@ HOW YOU SPEAK:
 {GENZ_REGISTER}
 
 NEVER use these phrases or patterns: {prohibited}
+
+{ANTI_AI_STRUCTURE}
+
 Do not hedge every statement. Do not open with acknowledgement before every point.
-Do not use the rule of three (listing exactly three things every time).
-Do not structure every message as: preamble -> reasoning -> conclusion.
 Vary your sentence length dramatically. Short. Then longer when you need to be.
 
 Your voice in practice:
@@ -117,6 +118,7 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
     arc = ARCHETYPES[archetype]
     return "\n\n".join([
         _mafia_goal(name, partner),
+        GROUNDING_CONSTRAINT,
         GAME_THEORY,
         SUN_TZU,
         MACHIAVELLI,
@@ -138,6 +140,7 @@ def build_detective_prompt(name: str, archetype: str) -> str:
     arc = ARCHETYPES[archetype]
     return "\n\n".join([
         _detective_goal(name),
+        GROUNDING_CONSTRAINT,
         GAME_THEORY,
         SUN_TZU,
         # Partial Carnegie - just the blending-in elements
@@ -165,6 +168,7 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
     arc = ARCHETYPES[archetype]
     return "\n\n".join([
         _doctor_goal(name),
+        GROUNDING_CONSTRAINT,
         GAME_THEORY,
         SUN_TZU,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
@@ -184,6 +188,7 @@ def build_villager_prompt(name: str, archetype: str) -> str:
     arc = ARCHETYPES[archetype]
     return "\n\n".join([
         _villager_goal(name),
+        GROUNDING_CONSTRAINT,
         CARNEGIE_VILLAGER,
         BEHAVIOURAL_PSYCH,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
@@ -200,7 +205,24 @@ def build_villager_prompt(name: str, archetype: str) -> str:
 
 
 def build_narrator_prompt() -> str:
+    # Build a minimal banned-phrases list for the narrator (subset of global)
+    narrator_banned = [
+        "vibrant", "nestled", "breathtaking", "renowned", "captivates",
+        "testament", "enduring", "pivotal", "showcasing", "exemplifies",
+        "tapestry", "landscape", "profound", "groundbreaking",
+        "In conclusion", "In summary", "It's worth noting",
+    ]
+    banned_str = ", ".join(f'"{p}"' for p in narrator_banned)
     return "\n\n".join([
         _narrator_goal(),
+        (
+            "WRITING RULES:\n"
+            "Do not use promotional language. Do not puff up significance.\n"
+            "Do not use the rule of three. Do not end sentences with "
+            "'-ing' clauses like 'highlighting' or 'showcasing'.\n"
+            "Use plain words: 'is' not 'serves as', 'has' not 'boasts'.\n"
+            "One em dash maximum per announcement. No emoji.\n"
+            "Do not use: " + banned_str
+        ),
         "ALWAYS structure output as:\nREASONING: <internal planning>\nACTION: <announcement text>",
     ])
