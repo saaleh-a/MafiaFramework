@@ -89,8 +89,11 @@ def _voice_block(archetype_name: str) -> str:
     arc = ARCHETYPES[archetype_name]
     voice = arc["voice"]
     # Combine archetype-specific prohibitions with global negative constraints
-    all_prohibited = voice["prohibited"] + NEGATIVE_CONSTRAINTS
-    prohibited = ", ".join(f'"{p}"' for p in all_prohibited)
+    prohibited = ", ".join(
+        f'"{p}"' for p in voice["prohibited"]
+    ) + ", " + ", ".join(
+        f'"{p}"' for p in NEGATIVE_CONSTRAINTS
+    )
     examples = "\n".join(f'  - "{ex}"' for ex in voice["examples"])
     return f"""
 HOW YOU SPEAK:

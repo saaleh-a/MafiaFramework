@@ -16,7 +16,7 @@ import re
 
 
 # Trigger words that indicate a quote-loop
-_LOOP_WORDS = re.compile(r"\b(quote|specifics|word[- ]?for[- ]?word|receipts)\b", re.IGNORECASE)
+_LOOP_WORDS = re.compile(r"\b(quotes?|specifics|word[- ]?for[- ]?word|receipts)\b", re.IGNORECASE)
 
 # Patterns that count as "forward progress" and reset the counter
 _PROGRESS_PATTERNS = re.compile(
@@ -70,7 +70,7 @@ class SchedulerAgent:
         hits = len(_LOOP_WORDS.findall(message))
         self._loop_word_count += hits
 
-        return self._loop_word_count > LOOP_THRESHOLD
+        return self._loop_word_count >= LOOP_THRESHOLD
 
     def get_chaos_event(self) -> str:
         """

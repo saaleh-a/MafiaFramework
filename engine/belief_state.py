@@ -119,7 +119,7 @@ class BayesianBelief:
         """Return the player with the highest Mafia probability."""
         if not self.beliefs:
             return None
-        top = max(self.beliefs, key=self.beliefs.get)
+        top = max(self.beliefs, key=lambda k: self.beliefs[k])
         return top, self.beliefs[top]
 
     def should_suppress_overconfident(self, target: str) -> bool:
@@ -155,8 +155,10 @@ class BayesianBelief:
             return
 
         probs = list(self.beliefs.values())
-        entropy = -sum(
-            p * math.log2(p) + (1 - p) * math.log2(1 - p)
+        # Sum of binary entropies: H(p) = -p*log2(p) - (1-p)*log2(1-p)
+        # for each player's Mafia probability. Higher = more uncertain.
+        entropy = sum(
+            -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
             for p in probs if 0 < p < 1
         )
 

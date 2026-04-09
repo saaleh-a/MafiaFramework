@@ -117,11 +117,16 @@ class MafiaGameOrchestrator:
                     belief = self._beliefs[name]
                     top = belief.get_top_suspect()
                     vote_target = top[0] if top else None
-                    belief_injection = "\n" + build_belief_prompt_injection(
+                    belief_injection = build_belief_prompt_injection(
                         belief, agent.archetype, vote_target
-                    ) + "\n"
+                    )
 
-                reasoning, action = await agent.day_discussion(self.gs, discussion_history)
+                # Pass discussion history with belief context appended
+                augmented_history = list(discussion_history)
+                if belief_injection:
+                    augmented_history.append(f"[INTERNAL — {name}'s belief state]\n{belief_injection}")
+
+                reasoning, action = await agent.day_discussion(self.gs, augmented_history)
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action)
                 discussion_history.append(f"{name}: {action}")

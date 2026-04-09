@@ -71,7 +71,7 @@ class SummaryAgent:
         if not mention_counts:
             return "• TARGET: No clear target yet — discussion is still open."
 
-        top_target = max(mention_counts, key=mention_counts.get)
+        top_target = max(mention_counts, key=lambda k: mention_counts[k])
         count = mention_counts[top_target]
         return f"• TARGET: {top_target} (mentioned by {count} player{'s' if count != 1 else ''})"
 
