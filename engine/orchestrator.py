@@ -169,7 +169,15 @@ class MafiaGameOrchestrator:
         if self.detective.name in self.gs.get_alive_players():
             reasoning, action = await self.detective.choose_investigation_target(self.gs)
             alive = self.gs.get_alive_players()
-            target = self._parse_target(action, [p for p in alive if p != self.detective.name])
+            eligible = [p for p in alive if p != self.detective.name]
+            target = self._parse_target(action, eligible)
+            if not target and eligible:
+                target = random.choice(eligible)
+                print(
+                    f"  [!] {self.detective.name}'s investigation target was unparseable; "
+                    f"random fallback -> {target}",
+                    file=sys.stderr,
+                )
             if target and target in self.gs.players:
                 true_role  = self.gs.players[target].role
                 result     = "Mafia" if true_role == "Mafia" else "Innocent"
@@ -185,8 +193,19 @@ class MafiaGameOrchestrator:
             reasoning, action = await self.doctor.choose_protection_target(self.gs)
             alive = self.gs.get_alive_players()
             protect_target = self._parse_target(action, alive) or action.strip()
+            # Server-side consecutive-protection enforcement
+            if protect_target == self.gs.last_protected:
+                eligible = [p for p in alive if p != self.gs.last_protected]
+                if eligible:
+                    protect_target = random.choice(eligible)
+                    print(
+                        f"  [!] {self.doctor.name} tried to protect the same player "
+                        f"two nights in a row; random fallback -> {protect_target}",
+                        file=sys.stderr,
+                    )
             if protect_target in alive:
                 self.gs.doctor_protect_target = protect_target
+                self.doctor.last_protected = protect_target
             self.gs.log(self.doctor.name, "Doctor", self.doctor.archetype, reasoning, action)
             self._print(
                 self.doctor.name, "Doctor", self.doctor.archetype,
