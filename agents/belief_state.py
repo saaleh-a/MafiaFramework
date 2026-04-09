@@ -30,13 +30,15 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class BayesianBelief:
+class SuspicionState:
     """
-    Tracks per-player suspicion levels.
+    Tracks per-player suspicion levels (0.0 to 1.0).
 
-    Despite the name (kept for backward compatibility), this is not
-    Bayesian inference. It is structured intuition: the LLM assigns
-    numbers based on conversational evidence, not conditional probability.
+    This is NOT Bayesian inference. It is structured intuition: the LLM
+    assigns numbers based on conversational evidence, not conditional
+    probability. There is no likelihood function, no Bayes' theorem.
+
+    The name 'SuspicionState' replaces the misleading 'BayesianBelief'.
     """
 
     probabilities: dict[str, float] = field(default_factory=dict)

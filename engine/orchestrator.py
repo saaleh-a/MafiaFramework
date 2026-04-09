@@ -3,7 +3,7 @@ engine/orchestrator.py - v3
 -----------------------------
 Game loop. Passes archetype through to all display and logging calls.
 Integrates:
-  - BeliefState: Bayesian probability tracking per agent
+  - SuspicionState: structured-intuition suspicion tracking per agent
   - SchedulerAgent: Quote-loop detection and Chaos Events
   - SummaryAgent: Low-cognitive-load narrative summaries per phase
 """
