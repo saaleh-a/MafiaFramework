@@ -7,15 +7,16 @@ from engine.game_state import GameState
 class DetectiveAgent:
     role = "Detective"
 
-    def __init__(self, name: str, archetype: str, client) -> None:
-        self.name     = name
-        self.archetype = archetype
+    def __init__(self, name: str, archetype: str, personality: str, client) -> None:
+        self.name        = name
+        self.archetype   = archetype
+        self.personality  = personality
         self.findings: dict[str, str] = {}
-        self.session  = AgentSession()
-        self.agent    = client.as_agent(
+        self.session     = AgentSession()
+        self.agent       = client.as_agent(
             name=name,
-            description=f"Town Detective [{archetype}]",
-            instructions=build_detective_prompt(name, archetype),
+            description=f"[Detective] [{archetype}] [{personality}]",
+            instructions=build_detective_prompt(name, archetype, personality),
         )
 
     def record_finding(self, target: str, result: str) -> None:

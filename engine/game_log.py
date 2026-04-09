@@ -46,10 +46,10 @@ def print_game_banner(players: dict) -> None:
 
 def print_model_archetype_table(assignments: list[dict]) -> None:
     print(f"{BOLD}Assignments (roles hidden):{RESET}")
-    print(f"  {'Player':10} {'Model':20} {'Archetype'}")
-    print(f"  {'------':10} {'-----':20} {'---------'}")
+    print(f"  {'Player':10} {'Model':20} {'Archetype':14} {'Personality'}")
+    print(f"  {'------':10} {'-----':20} {'---------':14} {'-----------'}")
     for a in assignments:
-        print(f"  {a['name']:10} {a['model']:20} {a.get('archetype', '?')}")
+        print(f"  {a['name']:10} {a['model']:20} {a.get('archetype', '?'):14} {a.get('personality', '')}")
     print()
 
 
@@ -66,9 +66,13 @@ def print_agent_action(
     reasoning: str | None,
     action: str,
     truncate: bool = True,
+    personality: str = "",
 ) -> None:
     colour  = _colour(role)
-    header  = f" [{agent_name} | {role} | {archetype}] "
+    if personality:
+        header = f" [{agent_name} | {role} | {archetype} | {personality}] "
+    else:
+        header = f" [{agent_name} | {role} | {archetype}] "
     width   = max(58, len(header) + 4)
     pad     = "─" * max(0, width - len(header) - 2)
 
@@ -141,10 +145,12 @@ def print_game_over(winner: str, game_state) -> None:
     winner_line = f"  GAME OVER - {winner.upper()} WINS!  "
     print(f"║{winner_line:^46}║")
     print(f"╚══════════════════════════════════════════════╝{RESET}")
-    print(f"\n{BOLD}Final roles and archetypes:{RESET}")
+    print(f"\n{BOLD}Final roles, archetypes, and personalities:{RESET}")
     for name, player in game_state.players.items():
-        status    = "SURVIVED" if player.is_alive else "ELIMINATED"
-        c         = RED if player.role == "Mafia" else GREEN
-        archetype = getattr(player, "archetype", "?")
-        print(f"  {c}{name:10} {player.role:10} [{archetype:12}] {status}{RESET}")
+        status      = "SURVIVED" if player.is_alive else "ELIMINATED"
+        c           = RED if player.role == "Mafia" else GREEN
+        archetype   = getattr(player, "archetype", "?")
+        personality = getattr(player, "personality", "")
+        pers_str    = f" [{personality}]" if personality else ""
+        print(f"  {c}{name:10} {player.role:10} [{archetype:12}]{pers_str} {status}{RESET}")
     print(f"\n{BOLD}Game lasted {game_state.round_number} round(s).{RESET}\n")

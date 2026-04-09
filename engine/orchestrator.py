@@ -145,7 +145,8 @@ class MafiaGameOrchestrator:
                     action = apply_overconfidence_gate(action, belief)
 
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
-                self._print(name, agent.role, agent.archetype, reasoning, action)
+                self._print(name, agent.role, agent.archetype, reasoning, action,
+                            personality=getattr(agent, 'personality', ''))
                 discussion_history.append(f"{name}: {action}")
 
                 # Scheduler: check for quote-loops
@@ -179,7 +180,8 @@ class MafiaGameOrchestrator:
                     belief.update(target, prob)
 
             self.gs.log(name, agent.role, agent.archetype, reasoning, action)
-            self._print(name, agent.role, agent.archetype, reasoning, action)
+            self._print(name, agent.role, agent.archetype, reasoning, action,
+                        personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
             if vote_target is None:
                 # Fallback: assign a random valid target when vote parsing fails
@@ -239,6 +241,7 @@ class MafiaGameOrchestrator:
             self._print(
                 mafia_agent.name, "Mafia", mafia_agent.archetype,
                 reasoning, f"[NIGHT TARGET]: {action}",
+                personality=mafia_agent.personality,
             )
             # Extract a valid target name from the action text
             parsed_target = self._parse_target(action, targets)
@@ -273,6 +276,7 @@ class MafiaGameOrchestrator:
                 self._print(
                     self.detective.name, "Detective", self.detective.archetype,
                     reasoning, f"[INVESTIGATED]: {target} -> {result}",
+                    personality=self.detective.personality,
                 )
 
         if self.doctor.name in self.gs.get_alive_players():
@@ -305,6 +309,7 @@ class MafiaGameOrchestrator:
             self._print(
                 self.doctor.name, "Doctor", self.doctor.archetype,
                 reasoning, f"[PROTECTING]: {protect_target}",
+                personality=self.doctor.personality,
             )
 
         killed, was_protected = self.gs.apply_night_actions()
@@ -330,9 +335,10 @@ class MafiaGameOrchestrator:
         self,
         name: str, role: str, archetype: str,
         reasoning: str | None, action: str,
+        personality: str = "",
     ) -> None:
         display_reasoning = None if self.quiet else reasoning
-        print_agent_action(name, role, archetype, display_reasoning, action, not self.debug)
+        print_agent_action(name, role, archetype, display_reasoning, action, not self.debug, personality=personality)
 
     def _parse_vote(self, action: str, valid_targets: list[str], voter: str) -> str | None:
         text = action.strip()

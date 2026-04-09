@@ -15,6 +15,7 @@ class PlayerState:
     name: str
     role: str          # "Mafia" | "Detective" | "Doctor" | "Villager"
     archetype: str     # one of the 13 archetypes
+    personality: str   = ""   # performance layer (e.g. "TheGhost")
     is_alive: bool     = True
     is_revealed: bool  = False
 
