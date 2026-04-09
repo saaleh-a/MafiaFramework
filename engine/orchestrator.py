@@ -6,6 +6,7 @@ Everything else structurally identical to v2.
 """
 
 import random
+import sys
 from engine.game_state import GameState, GamePhase
 from engine.game_log import (
     print_phase_header, print_agent_action,
@@ -101,6 +102,17 @@ class MafiaGameOrchestrator:
             self.gs.log(name, agent.role, agent.archetype, reasoning, action)
             self._print(name, agent.role, agent.archetype, reasoning, action)
             vote_target = self._parse_vote(action, alive, name)
+            if vote_target is None:
+                # Fallback: assign a random valid target when vote parsing fails
+                # (e.g. self-vote, refusal, or unparseable response)
+                eligible = [p for p in alive if p != name]
+                if eligible:
+                    vote_target = random.choice(eligible)
+                    print(
+                        f"  [!] {name}'s vote was unparseable; "
+                        f"random fallback -> {vote_target}",
+                        file=sys.stderr,
+                    )
             if vote_target:
                 self.gs.votes[name] = vote_target
 
@@ -125,6 +137,7 @@ class MafiaGameOrchestrator:
         await self._narrate("Night falls. Town sleeps. Mafia stirs.")
 
         alive_mafia   = self.gs.get_alive_mafia()
+        targets       = self.gs.get_alive_town()
         mafia_actions: list[str] = []
         final_kill:   str | None = None
 
@@ -138,19 +151,23 @@ class MafiaGameOrchestrator:
                 mafia_agent.name, "Mafia", mafia_agent.archetype,
                 reasoning, f"[NIGHT TARGET]: {action}",
             )
-            mafia_actions.append(action)
-            final_kill = action.strip()
+            # Extract a valid target name from the action text
+            parsed_target = self._parse_target(action, targets)
+            mafia_actions.append(parsed_target or action.strip())
+            final_kill = parsed_target
 
         if final_kill and final_kill in self.gs.get_alive_town():
             self.gs.night_kill_target = final_kill
-        elif final_kill:
+        elif not final_kill:
+            # Fallback only when no valid kill target was parsed at all
             town = self.gs.get_alive_town()
             self.gs.night_kill_target = town[0] if town else None
 
         if self.detective.name in self.gs.get_alive_players():
             reasoning, action = await self.detective.choose_investigation_target(self.gs)
-            target = action.strip()
-            if target in self.gs.players:
+            alive = self.gs.get_alive_players()
+            target = self._parse_target(action, [p for p in alive if p != self.detective.name])
+            if target and target in self.gs.players:
                 true_role  = self.gs.players[target].role
                 result     = "Mafia" if true_role == "Mafia" else "Innocent"
                 self.detective.record_finding(target, result)
@@ -163,8 +180,9 @@ class MafiaGameOrchestrator:
 
         if self.doctor.name in self.gs.get_alive_players():
             reasoning, action = await self.doctor.choose_protection_target(self.gs)
-            protect_target = action.strip()
-            if protect_target in self.gs.get_alive_players():
+            alive = self.gs.get_alive_players()
+            protect_target = self._parse_target(action, alive) or action.strip()
+            if protect_target in alive:
                 self.gs.doctor_protect_target = protect_target
             self.gs.log(self.doctor.name, "Doctor", self.doctor.archetype, reasoning, action)
             self._print(
@@ -209,5 +227,19 @@ class MafiaGameOrchestrator:
         text_lower = text.lower()
         for target in valid_targets:
             if target.lower() in text_lower and target != voter:
+                return target
+        return None
+
+    @staticmethod
+    def _parse_target(action: str, valid_targets: list[str]) -> str | None:
+        """Extract a valid player name from free-form action text."""
+        text = action.strip()
+        # Exact match first
+        if text in valid_targets:
+            return text
+        # Search for any valid target name mentioned in the text
+        text_lower = text.lower()
+        for target in valid_targets:
+            if target.lower() in text_lower:
                 return target
         return None

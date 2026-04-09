@@ -30,8 +30,9 @@ class MafiaAgent:
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Full discussion:\n{chr(10).join(history)}\n\n"
+            f"You are {self.name}. You CANNOT vote for yourself.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: VOTE: [exact name]"
+            f"ACTION must be: VOTE: [exact name from valid targets]"
         )
 
     async def choose_night_kill(self, game_state: GameState, partner_action: str | None = None) -> tuple[str, str]:
