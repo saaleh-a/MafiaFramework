@@ -32,19 +32,42 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     Splits the model output on ACTION:.
     Returns (reasoning_text, action_text).
     If no ACTION: marker found, returns ("", full_text).
-    Also strips any REASONING: marker that leaks into the action section.
+
+    Uses the *last* ACTION: marker so that when the model mistakenly
+    writes  ACTION: REASONING: <thoughts> ACTION: <real action>
+    we still recover the real action from the final marker.
+
+    If REASONING: leaks into the action section with no subsequent
+    ACTION: marker, the action is treated as empty so the caller
+    can retry.
     """
     text = text.strip()
-    if "ACTION:" in text:
-        parts    = text.split("ACTION:", 1)
-        reasoning = parts[0].replace("REASONING:", "").strip()
-        action    = parts[1].strip()
-        # Strip REASONING: that leaked into the action section
-        if action.startswith("REASONING:"):
-            action = action.split("REASONING:", 1)[1].strip()
-        return reasoning, action
-    # Fallback: no marker - treat whole response as the action
-    return "", text
+    if "ACTION:" not in text:
+        # Fallback: no marker - treat whole response as the action
+        return "", text
+
+    # Split on the LAST ACTION: marker
+    parts     = text.rsplit("ACTION:", 1)
+    raw_front = parts[0]
+    action    = parts[1].strip()
+
+    # Collect reasoning from everything before the last ACTION:,
+    # stripping any stray REASONING: / ACTION: markers
+    reasoning = raw_front
+    for marker in ("REASONING:", "ACTION:"):
+        reasoning = reasoning.replace(marker, " ")
+    reasoning = " ".join(reasoning.split())  # collapse whitespace
+
+    # If REASONING: still leaked into the action section (the model
+    # wrote only one ACTION: followed by REASONING:), the real action
+    # is missing.  Absorb the text into reasoning and return an empty
+    # action so the retry logic can fire.
+    if action.upper().startswith("REASONING:"):
+        leaked = action.split("REASONING:", 1)[1].strip()
+        reasoning = f"{reasoning} {leaked}".strip()
+        action = ""
+
+    return reasoning, action
 
 
 async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
@@ -54,7 +77,8 @@ async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
     Wraps the streaming call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
     Retries up to _MAX_RETRIES times if the model returns a
-    content-filter refusal.
+    content-filter refusal or a corrupted response (e.g. REASONING
+    leaked into the ACTION section with no real action text).
     """
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
@@ -71,7 +95,14 @@ async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
 
             # Best-effort: strip any residual refusal fragments
             full_text = _strip_refusal(full_text)
-            return parse_reasoning_action(full_text)
+            reasoning, action = parse_reasoning_action(full_text)
+
+            # If the action is empty (e.g. REASONING leaked into ACTION
+            # with no real action), retry when possible.
+            if not action.strip() and attempt < _MAX_RETRIES:
+                continue
+
+            return reasoning, action
         except Exception as exc:
             last_exc = exc
             _handle_api_error(exc)

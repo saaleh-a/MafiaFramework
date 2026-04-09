@@ -133,6 +133,9 @@ class MafiaGameOrchestrator:
             return
 
         self.gs.phase = GamePhase.NIGHT
+        # Clear the day-vote elimination so that only the night kill
+        # (if any) is visible to the next day's narrator.
+        self.gs.eliminated_this_round = None
         print_phase_header("NIGHT", self.gs.round_number)
         await self._narrate("Night falls. Town sleeps. Mafia stirs.")
 

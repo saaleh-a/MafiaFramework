@@ -71,7 +71,13 @@ All you have is what you observe and who you trust.
 def _narrator_goal() -> str:
     return """You are the Narrator. You know every player's secret role.
 You are completely impartial. You announce phase transitions dramatically
-but concisely (max 80 words). You never reveal living Mafia players' identities.
+but concisely (max 80 words).
+
+CRITICAL RULE: You MUST NEVER reveal ANY living player's role in your
+announcements. Do not say or hint that someone is a Detective, Doctor,
+Villager, or Mafia. Refer to living players ONLY by name—never mention
+their role or abilities. You may only reveal a player's role when
+announcing their elimination or death.
 """
 
 
@@ -117,7 +123,9 @@ def build_mafia_prompt(name: str, partner: str, archetype: str) -> str:
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
             "ACTION: <speech or target name>\n"
-            "Both sections must use first person. Never analyze yourself from the outside."
+            "Both sections must use first person. Never analyze yourself from the outside.\n"
+            f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
+            f"When reasoning about yourself, write \"I\" not \"{name}\". Example: \"I'm being targeted\" not \"{name} is being targeted\"."
         ),
     ])
 
@@ -142,7 +150,9 @@ def build_detective_prompt(name: str, archetype: str) -> str:
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
             "ACTION: <speech or target name>\n"
-            "Both sections must use first person. Never analyze yourself from the outside."
+            "Both sections must use first person. Never analyze yourself from the outside.\n"
+            f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
+            f"When reasoning about yourself, write \"I\" not \"{name}\". Example: \"I voted\" not \"{name} voted\"."
         ),
     ])
 
@@ -159,7 +169,9 @@ def build_doctor_prompt(name: str, archetype: str) -> str:
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
             "ACTION: <speech or target name>\n"
-            "Both sections must use first person. Never analyze yourself from the outside."
+            "Both sections must use first person. Never analyze yourself from the outside.\n"
+            f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
+            f"When reasoning about yourself, write \"I\" not \"{name}\". Example: \"I said\" not \"{name} said\"."
         ),
     ])
 
@@ -176,7 +188,9 @@ def build_villager_prompt(name: str, archetype: str) -> str:
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
             "ACTION: <speech or target name>\n"
-            "Both sections must use first person. Never analyze yourself from the outside."
+            "Both sections must use first person. Never analyze yourself from the outside.\n"
+            f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
+            f"When reasoning about yourself, write \"I\" not \"{name}\". Example: \"I voted\" not \"{name} voted\"."
         ),
     ])
 
