@@ -2,7 +2,8 @@
 engine/orchestrator.py - v3
 -----------------------------
 Game loop. Passes archetype through to all display and logging calls.
-Everything else structurally identical to v2.
+Includes BeliefState middleware, SchedulerAgent for loop-breaking,
+and SummaryAgent for phase-start narrative summaries.
 """
 
 import random
@@ -12,11 +13,14 @@ from engine.game_log import (
     print_phase_header, print_agent_action,
     print_vote_tally, print_night_result, print_game_over,
 )
-from agents.narrator  import NarratorAgent
-from agents.mafia     import MafiaAgent
-from agents.detective import DetectiveAgent
-from agents.doctor    import DoctorAgent
-from agents.villager  import VillagerAgent
+from engine.belief_state import BayesianBelief, build_belief_prompt_injection
+from agents.narrator   import NarratorAgent
+from agents.mafia      import MafiaAgent
+from agents.detective  import DetectiveAgent
+from agents.doctor     import DoctorAgent
+from agents.villager   import VillagerAgent
+from agents.scheduler  import SchedulerAgent
+from agents.summary    import SummaryAgent
 
 
 class MafiaGameOrchestrator:
@@ -43,6 +47,20 @@ class MafiaGameOrchestrator:
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
 
+        # Belief state: one BayesianBelief per agent
+        all_names = list(game_state.players.keys())
+        self._beliefs: dict[str, BayesianBelief] = {}
+        for a in mafia_agents + [detective, doctor] + villagers:
+            belief = BayesianBelief(agent_name=a.name)
+            belief.initialise(all_names)
+            self._beliefs[a.name] = belief
+
+        # Scheduler for detecting quote-loops
+        self._scheduler = SchedulerAgent()
+
+        # Summary agent for phase-start narrative
+        self._summary = SummaryAgent()
+
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
         await self._narrate("Announce the start of the Mafia game. Set the scene.")
@@ -62,6 +80,13 @@ class MafiaGameOrchestrator:
     async def _run_day_phase(self) -> None:
         self.gs.phase = GamePhase.DAY_DISCUSSION
         print_phase_header("DAY DISCUSSION", self.gs.round_number)
+
+        # Summary at the start of every phase
+        summary = self._summary.generate_summary(self.gs)
+        print(f"\n{summary}\n")
+
+        # Reset scheduler for the new round
+        self._scheduler.reset()
 
         if self.gs.round_number == 1:
             await self._narrate("Announce round 1. First morning. Town meets.")
@@ -85,10 +110,29 @@ class MafiaGameOrchestrator:
                 if name not in self._agents:
                     continue
                 agent = self._agents[name]
+
+                # Belief state middleware: inject beliefs into discussion prompt
+                belief_injection = ""
+                if name in self._beliefs:
+                    belief = self._beliefs[name]
+                    top = belief.get_top_suspect()
+                    vote_target = top[0] if top else None
+                    belief_injection = "\n" + build_belief_prompt_injection(
+                        belief, agent.archetype, vote_target
+                    ) + "\n"
+
                 reasoning, action = await agent.day_discussion(self.gs, discussion_history)
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action)
                 discussion_history.append(f"{name}: {action}")
+
+                # Update beliefs based on the action content
+                self._update_beliefs_from_action(name, action, alive)
+
+                # Scheduler: check for quote loops
+                if self._scheduler.scan_message(action):
+                    chaos_prompt = self._scheduler.get_chaos_event()
+                    await self._narrate(chaos_prompt)
 
         self.gs.phase = GamePhase.DAY_VOTE
         print_phase_header("DAY VOTE", self.gs.round_number)
@@ -115,6 +159,8 @@ class MafiaGameOrchestrator:
                     )
             if vote_target:
                 self.gs.votes[name] = vote_target
+                # Update all agents' beliefs based on the vote
+                self._update_beliefs_from_vote(name, vote_target)
 
         eliminated = self.gs.tally_votes()
         print_vote_tally(self.gs.votes, eliminated)
@@ -274,3 +320,47 @@ class MafiaGameOrchestrator:
             if target.lower() in text_lower:
                 return target
         return None
+
+    # ------------------------------------------------------------------ #
+    #  Belief state helpers                                                #
+    # ------------------------------------------------------------------ #
+
+    def _update_beliefs_from_action(
+        self, speaker: str, action: str, alive: list[str],
+    ) -> None:
+        """
+        Parse an agent's discussion action and update all agents' beliefs.
+
+        Looks for accusation/defense patterns and propagates updates.
+        """
+        action_lower = action.lower()
+
+        for target in alive:
+            if target == speaker:
+                continue
+            target_lower = target.lower()
+            if target_lower not in action_lower:
+                continue
+
+            # Check for accusation signals
+            accusation_words = ["suspect", "suspicious", "mafia", "lying", "vote"]
+            is_accusation = any(w in action_lower for w in accusation_words)
+
+            # Check for defense signals
+            defense_words = ["trust", "innocent", "cleared", "defend", "agree with"]
+            is_defense = any(w in action_lower for w in defense_words)
+
+            for belief in self._beliefs.values():
+                if is_accusation:
+                    belief.update_from_accusation(speaker, target)
+                elif is_defense:
+                    belief.update_from_defense(speaker, target)
+
+    def _update_beliefs_from_vote(self, voter: str, target: str) -> None:
+        """Update all agents' beliefs based on an observed vote."""
+        for name, belief in self._beliefs.items():
+            # Is the voter someone this agent suspects?
+            voter_is_suspect = (
+                voter in belief.beliefs and belief.beliefs[voter] > 0.5
+            )
+            belief.update_from_vote(voter, target, voter_is_suspect)

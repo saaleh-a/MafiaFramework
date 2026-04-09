@@ -3,11 +3,12 @@ prompts/archetypes.py
 ---------------------
 12 player archetypes. Each has:
 
-  strategy_modifier  - how this archetype deviates from optimal strategy
-  voice              - dict with:
-      prohibited     - AI writing patterns to never use
-      register       - how this player actually sounds
-      examples       - 2-3 example phrases in this voice
+  strategy_modifier    - how this archetype deviates from optimal strategy
+  voice                - dict with:
+      prohibited       - AI writing patterns to never use
+      register         - how this player actually sounds
+      examples         - 2-3 example phrases in this voice
+  negative_constraints - global banned phrases that all archetypes avoid
 
 Archetypes apply to ALL roles. The same archetype on a Mafia player vs
 a Villager produces completely different gameplay - same failure mode,
@@ -16,6 +17,53 @@ different consequences.
 METHODICAL is Villager-only (replaces ANALYTICAL for that role).
 CHARMING is added to cover the Carnegie-execution archetype.
 """
+
+# ------------------------------------------------------------------ #
+#  Global negative constraints — banned "AIisms"                       #
+#  These phrases are banned across ALL archetypes to prevent agents     #
+#  from sounding like a corporate chatbot or LinkedIn post.            #
+# ------------------------------------------------------------------ #
+
+NEGATIVE_CONSTRAINTS: list[str] = [
+    "It's worth noting",
+    "I'm noticing a pattern",
+    "Let's be methodical",
+    "Let's break this down",
+    "I need a concrete target",
+    "That's a great point",
+    "I appreciate your perspective",
+    "Let's take a step back",
+    "Moving forward",
+    "To be transparent",
+    "I want to flag something",
+    "It's important to consider",
+    "Let me articulate",
+    "From a strategic standpoint",
+    "I'd like to propose",
+    "In terms of",
+    "At the end of the day",
+    "With all due respect",
+    "I think we can all agree",
+    "Let's circle back",
+    "Just to piggyback on that",
+    "Absolutely",
+    "Fundamentally",
+    "Essentially",
+]
+
+# ------------------------------------------------------------------ #
+#  GenZ style register — North London flavour                          #
+#  Injected as a secondary register to mask the LLM's natural          #
+#  neutral-professional drift.                                         #
+# ------------------------------------------------------------------ #
+
+GENZ_STYLE_REGISTER: str = (
+    "Mix in casual London GenZ speech naturally — use 'long' (tedious/effort), "
+    "'peak' (bad/unfortunate), 'bare' (very/lots), and 'innit' (tag question) "
+    "when they fit. Don't force every one into every message. Drop them in where "
+    "a real person would. Never use all four in the same sentence. "
+    "The goal is to sound like a person, not an AI trying to sound like a person."
+)
 
 ARCHETYPES: dict[str, dict] = {
 
