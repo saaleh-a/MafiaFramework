@@ -2,7 +2,10 @@
 engine/orchestrator.py - v3
 -----------------------------
 Game loop. Passes archetype through to all display and logging calls.
-Everything else structurally identical to v2.
+Integrates:
+  - BeliefState: Bayesian probability tracking per agent
+  - SchedulerAgent: Quote-loop detection and Chaos Events
+  - SummaryAgent: Low-cognitive-load narrative summaries per phase
 """
 
 import random
@@ -17,6 +20,14 @@ from agents.mafia     import MafiaAgent
 from agents.detective import DetectiveAgent
 from agents.doctor    import DoctorAgent
 from agents.villager  import VillagerAgent
+from agents.belief_state import (
+    BayesianBelief,
+    build_belief_prompt_injection,
+    parse_belief_updates,
+    apply_overconfidence_gate,
+)
+from agents.scheduler import SchedulerAgent
+from agents.summary   import SummaryAgent
 
 
 class MafiaGameOrchestrator:
@@ -43,6 +54,22 @@ class MafiaGameOrchestrator:
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
 
+        # Belief State: each agent maintains Bayesian probability estimates
+        player_names = list(game_state.players.keys())
+        self._beliefs: dict[str, BayesianBelief] = {}
+        for name in player_names:
+            belief = BayesianBelief()
+            # Exclude self from suspicion tracking
+            others = [n for n in player_names if n != name]
+            belief.initialize(others, num_mafia=2)
+            self._beliefs[name] = belief
+
+        # Scheduler: monitors for quote-loops and triggers Chaos Events
+        self._scheduler = SchedulerAgent(player_names)
+
+        # Summary: generates low-cognitive-load narrative each phase
+        self._summary = SummaryAgent()
+
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
         await self._narrate("Announce the start of the Mafia game. Set the scene.")
@@ -54,6 +81,7 @@ class MafiaGameOrchestrator:
             await self._run_night_phase()
             self.gs.round_number += 1
             self.gs.reset_round_state()
+            self._scheduler.reset_round()
 
         winner = self.gs.check_win_condition()
         print_game_over(winner, self.gs)
@@ -62,6 +90,10 @@ class MafiaGameOrchestrator:
     async def _run_day_phase(self) -> None:
         self.gs.phase = GamePhase.DAY_DISCUSSION
         print_phase_header("DAY DISCUSSION", self.gs.round_number)
+
+        # Summary Agent: display narrative summary at phase start
+        narrative = self._summary.summarize(self.gs)
+        print(narrative)
 
         if self.gs.round_number == 1:
             await self._narrate("Announce round 1. First morning. Town meets.")
@@ -72,6 +104,9 @@ class MafiaGameOrchestrator:
                 await self._narrate(
                     f"Dawn. {victim} ({role}) was found dead. Town must now discuss."
                 )
+                # Remove eliminated player from all belief states
+                for belief in self._beliefs.values():
+                    belief.remove_player(victim)
             else:
                 await self._narrate("Dawn. Nobody died last night. Tension remains.")
 
@@ -85,13 +120,46 @@ class MafiaGameOrchestrator:
                 if name not in self._agents:
                     continue
                 agent = self._agents[name]
+
+                # Belief State: inject belief prompt into discussion context
+                belief = self._beliefs.get(name)
+                belief_injection = ""
+                if belief:
+                    belief_injection = "\n\n" + build_belief_prompt_injection(
+                        belief, agent.archetype,
+                    )
+
                 reasoning, action = await agent.day_discussion(self.gs, discussion_history)
+
+                # Parse and apply belief updates from reasoning
+                if belief and reasoning:
+                    updates = parse_belief_updates(reasoning)
+                    for target, prob in updates.items():
+                        belief.update(target, prob)
+
+                # Overconfidence gate: soften if certainty too low
+                if belief and agent.archetype == "Overconfident":
+                    action = apply_overconfidence_gate(action, belief)
+
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action)
                 discussion_history.append(f"{name}: {action}")
 
+                # Scheduler: check for quote-loops
+                chaos_event = self._scheduler.observe(
+                    name, action, discussion_history,
+                )
+                if chaos_event:
+                    print(f"\n⚡ {chaos_event}\n")
+                    await self._narrate(chaos_event)
+
         self.gs.phase = GamePhase.DAY_VOTE
         print_phase_header("DAY VOTE", self.gs.round_number)
+
+        # Summary Agent: display narrative summary before voting
+        narrative = self._summary.summarize(self.gs)
+        print(narrative)
+
         await self._narrate("Announce voting time. Players must choose who to eliminate.")
 
         for name in alive:
@@ -99,6 +167,14 @@ class MafiaGameOrchestrator:
                 continue
             agent = self._agents[name]
             reasoning, action = await agent.cast_vote(self.gs, discussion_history)
+
+            # Parse belief updates from vote reasoning too
+            belief = self._beliefs.get(name)
+            if belief and reasoning:
+                updates = parse_belief_updates(reasoning)
+                for target, prob in updates.items():
+                    belief.update(target, prob)
+
             self.gs.log(name, agent.role, agent.archetype, reasoning, action)
             self._print(name, agent.role, agent.archetype, reasoning, action)
             vote_target = self._parse_vote(action, alive, name)
@@ -115,6 +191,8 @@ class MafiaGameOrchestrator:
                     )
             if vote_target:
                 self.gs.votes[name] = vote_target
+                # Track vote changes for scheduler
+                self._scheduler.record_vote_change(name)
 
         eliminated = self.gs.tally_votes()
         print_vote_tally(self.gs.votes, eliminated)
@@ -137,6 +215,11 @@ class MafiaGameOrchestrator:
         # (if any) is visible to the next day's narrator.
         self.gs.eliminated_this_round = None
         print_phase_header("NIGHT", self.gs.round_number)
+
+        # Summary Agent: display narrative summary at night start
+        narrative = self._summary.summarize(self.gs)
+        print(narrative)
+
         await self._narrate("Night falls. Town sleeps. Mafia stirs.")
 
         alive_mafia   = self.gs.get_alive_mafia()

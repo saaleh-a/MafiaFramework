@@ -13,7 +13,6 @@ load_dotenv()
 
 
 async def main():
-    from agent_framework import Agent
     from agent_framework.foundry import FoundryChatClient
     from azure.identity import AzureCliCredential
 
@@ -27,15 +26,19 @@ async def main():
         credential=AzureCliCredential(),
     )
 
-    agent = Agent(
-        client=client,
+    agent = client.as_agent(
+        name="SetupCheck",
         instructions="Reply with exactly the text: SETUP OK - nothing else.",
     )
 
-    result = await agent.run("Confirm setup.")
+    # v1.0 streaming API: use stream=True in run() (not deprecated run_stream())
+    result = ""
+    async for chunk in agent.run("Confirm setup.", stream=True):
+        if chunk.text:
+            result += chunk.text
     print(f"\nResult: {result}")
 
-    if "SETUP OK" in str(result):
+    if "SETUP OK" in result:
         print("\n✓ Ready to run the game.")
     else:
         print("\n✗ Unexpected output. Check your .env and az login.")

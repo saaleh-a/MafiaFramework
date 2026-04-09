@@ -20,7 +20,7 @@ from prompts.frameworks import (
     CARNEGIE_VILLAGER,
     BEHAVIOURAL_PSYCH,
 )
-from prompts.archetypes import ARCHETYPES
+from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER
 
 
 # ------------------------------------------------------------------ #
@@ -88,11 +88,15 @@ announcing their elimination or death.
 def _voice_block(archetype_name: str) -> str:
     arc = ARCHETYPES[archetype_name]
     voice = arc["voice"]
-    prohibited = ", ".join(f'"{p}"' for p in voice["prohibited"])
+    # Combine per-archetype prohibitions with global AIism bans
+    all_prohibited = list(voice["prohibited"]) + NEGATIVE_CONSTRAINTS
+    prohibited = ", ".join(f'"{p}"' for p in all_prohibited)
     examples = "\n".join(f'  - "{ex}"' for ex in voice["examples"])
     return f"""
 HOW YOU SPEAK:
 {voice["register"]}
+
+{GENZ_REGISTER}
 
 NEVER use these phrases or patterns: {prohibited}
 Do not hedge every statement. Do not open with acknowledgement before every point.
