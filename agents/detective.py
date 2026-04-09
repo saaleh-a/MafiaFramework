@@ -1,4 +1,5 @@
 from agents.base import run_agent_stream
+from agent_framework import AgentSession
 from prompts.builder import build_detective_prompt
 from engine.game_state import GameState
 
@@ -10,6 +11,7 @@ class DetectiveAgent:
         self.name     = name
         self.archetype = archetype
         self.findings: dict[str, str] = {}
+        self.session  = AgentSession()
         self.agent    = client.as_agent(
             name=name,
             description=f"Town Detective [{archetype}]",
@@ -26,7 +28,8 @@ class DetectiveAgent:
             f"{game_state.get_public_state_summary()}\n\n"
             f"Your private investigation log:\n{findings_text}\n\n"
             f"Discussion:\n{chr(10).join(history) or 'Nothing yet.'}\n\n"
-            f"Your turn. Max 80 words."
+            f"Your turn. Max 80 words.",
+            session=self.session,
         )
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
@@ -39,7 +42,8 @@ class DetectiveAgent:
             f"Full discussion:\n{chr(10).join(history)}\n\n"
             f"You are {self.name}. You CANNOT vote for yourself.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: VOTE: [exact name from valid targets]"
+            f"ACTION must be: VOTE: [exact name from valid targets]",
+            session=self.session,
         )
 
     async def choose_investigation_target(self, game_state: GameState) -> tuple[str, str]:
@@ -53,5 +57,6 @@ class DetectiveAgent:
             f"Unchecked: {unchecked}\n\n"
             f"NIGHT. Choose one player to investigate.\n"
             f"Valid targets: {', '.join(alive)}\n"
-            f"ACTION must be: [exact name only]"
+            f"ACTION must be: [exact name only]",
+            session=self.session,
         )

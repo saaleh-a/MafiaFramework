@@ -1,4 +1,5 @@
 from agents.base import run_agent_stream
+from agent_framework import AgentSession
 from prompts.builder import build_doctor_prompt
 from engine.game_state import GameState
 
@@ -10,6 +11,7 @@ class DoctorAgent:
         self.name           = name
         self.archetype      = archetype
         self.last_protected: str | None = None
+        self.session        = AgentSession()
         self.agent          = client.as_agent(
             name=name,
             description=f"Town Doctor [{archetype}]",
@@ -21,7 +23,8 @@ class DoctorAgent:
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Discussion:\n{chr(10).join(history) or 'Nothing yet.'}\n\n"
-            f"Your turn. Max 80 words. Stay inconspicuous."
+            f"Your turn. Max 80 words. Stay inconspicuous.",
+            session=self.session,
         )
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
@@ -32,7 +35,8 @@ class DoctorAgent:
             f"Full discussion:\n{chr(10).join(history)}\n\n"
             f"You are {self.name}. You CANNOT vote for yourself.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: VOTE: [exact name from valid targets]"
+            f"ACTION must be: VOTE: [exact name from valid targets]",
+            session=self.session,
         )
 
     async def choose_protection_target(self, game_state: GameState) -> tuple[str, str]:
@@ -44,6 +48,7 @@ class DoctorAgent:
             f"You protected {self.last_protected or 'nobody'} last night - cannot repeat.\n\n"
             f"NIGHT. Choose one player to protect.\n"
             f"Valid targets: {', '.join(valid)}\n"
-            f"ACTION must be: [exact name only]"
+            f"ACTION must be: [exact name only]",
+            session=self.session,
         )
         return reasoning, action

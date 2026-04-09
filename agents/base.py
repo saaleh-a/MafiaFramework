@@ -3,6 +3,8 @@
 import re
 import sys
 
+from agent_framework import AgentSession
+
 # Patterns that indicate a content-filter refusal from the model
 _REFUSAL_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"I'm sorry,?\s*but I cannot assist", re.IGNORECASE),
@@ -70,9 +72,18 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     return reasoning, action
 
 
-async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
+async def run_agent_stream(
+    agent,
+    prompt: str,
+    session: AgentSession | None = None,
+) -> tuple[str, str]:
     """
     Run an agent with streaming and return (reasoning, action).
+
+    When *session* is provided, MAF persists all messages (inputs and
+    outputs) in the session's in-memory history.  This gives the agent
+    genuine memory of every prior turn — it can reference what it and
+    others actually said instead of confabulating.
 
     Wraps the streaming call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
@@ -84,7 +95,7 @@ async def run_agent_stream(agent, prompt: str) -> tuple[str, str]:
     for attempt in range(_MAX_RETRIES + 1):
         try:
             full_text = ""
-            async for chunk in agent.run(prompt, stream=True):
+            async for chunk in agent.run(prompt, stream=True, session=session):
                 if chunk.text:
                     full_text += chunk.text
 

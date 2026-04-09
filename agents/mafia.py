@@ -1,4 +1,5 @@
 from agents.base import run_agent_stream
+from agent_framework import AgentSession
 from prompts.builder import build_mafia_prompt
 from engine.game_state import GameState
 
@@ -10,6 +11,7 @@ class MafiaAgent:
         self.name         = name
         self.partner_name = partner_name
         self.archetype    = archetype
+        self.session      = AgentSession()
         self.agent        = client.as_agent(
             name=name,
             description=f"Mafia player [{archetype}]",
@@ -21,7 +23,8 @@ class MafiaAgent:
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Discussion so far:\n{chr(10).join(history) or 'Nothing yet.'}\n\n"
-            f"Your turn. Max 80 words."
+            f"Your turn. Max 80 words.",
+            session=self.session,
         )
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
@@ -32,7 +35,8 @@ class MafiaAgent:
             f"Full discussion:\n{chr(10).join(history)}\n\n"
             f"You are {self.name}. You CANNOT vote for yourself.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: VOTE: [exact name from valid targets]"
+            f"ACTION must be: VOTE: [exact name from valid targets]",
+            session=self.session,
         )
 
     async def choose_night_kill(self, game_state: GameState, partner_action: str | None = None) -> tuple[str, str]:
@@ -43,5 +47,6 @@ class MafiaAgent:
             f"{game_state.get_public_state_summary()}{partner_note}\n\n"
             f"NIGHT. Choose kill target.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: [exact name only]"
+            f"ACTION must be: [exact name only]",
+            session=self.session,
         )
