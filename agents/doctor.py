@@ -46,7 +46,4 @@ class DoctorAgent:
             f"Valid targets: {', '.join(valid)}\n"
             f"ACTION must be: [exact name only]"
         )
-        target = action.strip()
-        if target in alive:
-            self.last_protected = target
         return reasoning, action

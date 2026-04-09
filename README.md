@@ -1,6 +1,6 @@
 # MafiaFramework
 
-An AI-powered simulation of the social deduction game **Mafia**, built on the [Microsoft Agent Framework (MAF)](https://github.com/microsoft/agent-framework) and [Azure AI Foundry](https://azure.microsoft.com/products/ai-studio). Seven AI agents — each with a unique personality archetype, randomly assigned role, and independently chosen language model — play a full game of Mafia against each other in the terminal.
+An AI-powered simulation of the social deduction game **Mafia**, built on the [Microsoft Agent Framework (MAF)](https://github.com/microsoft/agent-framework) and [Azure AI Foundry](https://azure.microsoft.com/products/ai-studio). Eleven AI agents — each with a unique personality archetype, randomly assigned role, and independently chosen language model — play a full game of Mafia against each other in the terminal.
 
 ---
 
@@ -26,7 +26,7 @@ MafiaFramework simulates full Mafia games where every participant is an LLM agen
 
 | Dimension     | Description                                                        |
 |---------------|--------------------------------------------------------------------|
-| **Role**      | Mafia (×2), Detective, Doctor, Villager (×3) — shuffled each game  |
+| **Role**      | Mafia (×2), Detective, Doctor, Villager (×7) — shuffled each game  |
 | **Model**     | Each agent is backed by a randomly selected Azure model deployment |
 | **Archetype** | One of 13 personality archetypes that shape strategy and voice     |
 
@@ -275,10 +275,13 @@ Roles are colour-coded:
 Edit `config/model_registry.py` to add or remove models from the pool. Each game randomly assigns one model per player from `AVAILABLE_MODELS`:
 
 ```python
+# Display names are derived automatically from the model_id via .upper().
+# The secondary model is only added when FOUNDRY_MODEL_4O differs from FOUNDRY_MODEL.
 AVAILABLE_MODELS = [
-    ModelConfig(name="GPT-4o-mini", model_id="gpt-4o-mini", short="4om"),
-    ModelConfig(name="GPT-4o",      model_id="gpt-4o",      short="4o "),
+    ModelConfig(name=_display_name(_primary_model), model_id=_primary_model, short="4om"),
 ]
+# If FOUNDRY_MODEL_4O is set and differs:
+#   ModelConfig(name=_display_name(_secondary_model), model_id=_secondary_model, short="4o "),
 ```
 
 > Every model in the pool **must** have a matching deployment in your Azure AI Foundry project. A missing deployment causes a `DeploymentNotFound` error at runtime.
@@ -288,12 +291,16 @@ AVAILABLE_MODELS = [
 Edit `engine/game_manager.py` to change player names or role counts:
 
 ```python
-PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace"]
+PLAYER_NAMES = [
+    "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank",
+    "Grace", "Hank", "Ivy", "Jack", "Kate",
+]
 
 ROLE_DISTRIBUTION = [
     "Mafia", "Mafia",
     "Detective",
     "Doctor",
+    "Villager", "Villager", "Villager", "Villager",
     "Villager", "Villager", "Villager",
 ]
 ```

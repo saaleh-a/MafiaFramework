@@ -32,18 +32,32 @@ _secondary_model = os.environ.get("FOUNDRY_MODEL_4O", _primary_model)
 
 # Add/remove entries to match what you've actually deployed.
 # All must exist in your Foundry project.
+#
+# Display names are derived from the actual model_id so the
+# assignment table never lies about which deployment is in use.
+def _display_name(model_id: str) -> str:
+    """Derive a human-friendly display name from a deployment id."""
+    return model_id.upper()   # e.g. "gpt-4o-mini" → "GPT-4O-MINI"
+
+
 AVAILABLE_MODELS: list[ModelConfig] = [
     ModelConfig(
-        name="GPT-4o-mini",
+        name=_display_name(_primary_model),
         model_id=_primary_model,
         short="4om",
     ),
-    ModelConfig(
-        name="GPT-4o",
-        model_id=_secondary_model,
-        short="4o ",
-    ),
 ]
+
+# Only add the secondary model as a separate entry when it actually
+# differs from the primary; otherwise, every player draws from one pool.
+if _secondary_model != _primary_model:
+    AVAILABLE_MODELS.append(
+        ModelConfig(
+            name=_display_name(_secondary_model),
+            model_id=_secondary_model,
+            short="4o ",
+        ),
+    )
 
 # Uncomment to add more deployments when available:
 # ModelConfig(name="GPT-4.1-mini", model_id="gpt-4.1-mini", short="41m"),
