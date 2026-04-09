@@ -114,7 +114,9 @@ class GameState:
         self.last_protected        = self.doctor_protect_target
         self.night_kill_target     = None
         self.doctor_protect_target = None
-        self.eliminated_this_round = None
+        # Note: eliminated_this_round is intentionally NOT cleared here.
+        # It is cleared at the start of each night phase so the next
+        # day's narrator can still read who was killed overnight.
 
     def log(self, agent_name: str, role: str, archetype: str, reasoning: str | None, action: str) -> None:
         self.game_log.append(LogEntry(
