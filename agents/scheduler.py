@@ -120,7 +120,7 @@ class SchedulerAgent:
         """Reveal which player has spoken the least."""
         if not self._speaker_counts:
             return self._chaos_whisper(_history)
-        quietest = min(self._speaker_counts, key=self._speaker_counts.get)
+        quietest = min(self._speaker_counts, key=lambda k: self._speaker_counts[k])
         count = self._speaker_counts[quietest]
         return (
             f"CHAOS EVENT: The Narrator notices something. "
@@ -168,10 +168,10 @@ class SchedulerAgent:
                     content = line[len(name) + 1:].strip()
                     word_counts[name] += len(content.split())
                     break
-        if not any(word_counts.values()):
+        if not word_counts or not any(word_counts.values()):
             return self._chaos_whisper(history)
-        most_verbose = max(word_counts, key=word_counts.get)
-        most_quiet = min(word_counts, key=word_counts.get)
+        most_verbose = max(word_counts, key=lambda k: word_counts[k])
+        most_quiet = min(word_counts, key=lambda k: word_counts[k])
         return (
             f"CHAOS EVENT: The Narrator counts the words. "
             f"{most_verbose} has said the most ({word_counts[most_verbose]} words). "

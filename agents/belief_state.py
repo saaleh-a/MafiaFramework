@@ -190,7 +190,3 @@ def apply_overconfidence_gate(action_text: str, belief: SuspicionState) -> str:
                 )
                 break
     return action_text
-
-
-# Backward-compat alias (orchestrator and tests may still import this name)
-BayesianBelief = SuspicionState

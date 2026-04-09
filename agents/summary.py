@@ -116,10 +116,8 @@ class SummaryAgent:
         if not any(mention_counts.values()):
             return None
 
-        top_target = max(mention_counts, key=mention_counts.get)
+        top_target = max(mention_counts, key=lambda k: mention_counts[k])
         count = mention_counts[top_target]
-        if count == 0:
-            return None
 
         return f"{top_target} (mentioned suspiciously {count} time(s))"
 
