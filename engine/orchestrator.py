@@ -24,8 +24,11 @@ from agents.belief_state import (
     build_belief_prompt_injection,
     parse_belief_updates,
     apply_overconfidence_gate,
+    BeliefGraph,
+    TemporalConsistencyChecker,
 )
 from agents.summary   import SummaryAgent
+from agents.memory    import GameMemoryStore
 
 
 class MafiaGameOrchestrator:
@@ -64,6 +67,12 @@ class MafiaGameOrchestrator:
 
         # Summary: generates low-cognitive-load narrative each phase
         self._summary = SummaryAgent()
+
+        # BeliefGraph: scum-tell pattern detection (bandwagon, redirect, instahammer)
+        self._belief_graph = BeliefGraph()
+
+        # Temporal consistency: "DeepSeek" slip detection
+        self._temporal_checker = TemporalConsistencyChecker()
 
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
@@ -124,6 +133,26 @@ class MafiaGameOrchestrator:
                         + "\n\n"
                     )
 
+                # Inject scum-tell flags from BeliefGraph
+                graph_flags = self._belief_graph.get_flags_for_prompt()
+                if graph_flags:
+                    belief_prefix += graph_flags + "\n\n"
+
+                # Inject temporal slip warnings
+                slip_flags = self._temporal_checker.get_slips_for_prompt()
+                if slip_flags:
+                    belief_prefix += slip_flags + "\n\n"
+
+                # Iroh Protocol: check if Detective/Doctor should reveal
+                if agent.role in ("Detective", "Doctor") and belief:
+                    if belief.should_reveal_identity(name, self._beliefs):
+                        belief_prefix += (
+                            f"⚠ REVEAL_IDENTITY: The group suspects you ({name}) "
+                            f"above the self-preservation threshold. You MUST reveal "
+                            f"your role as {agent.role} in your next ACTION to survive. "
+                            f"Dying with your role hidden helps nobody.\n\n"
+                        )
+
                 reasoning, action = await agent.day_discussion(
                     self.gs, discussion_history, belief_prefix=belief_prefix,
                 )
@@ -137,6 +166,20 @@ class MafiaGameOrchestrator:
                 # Overconfidence gate: soften if certainty too low
                 if belief and agent.archetype == "Overconfident":
                     action = apply_overconfidence_gate(action, belief)
+
+                # Track discussion contribution in BeliefGraph
+                self._belief_graph.record_discussion(name)
+
+                # Check for temporal slips in the action
+                self._temporal_checker.check_message(
+                    name, action, self.gs.round_number,
+                )
+
+                # Check for redirects (BeliefGraph)
+                current_target = self._get_current_consensus(discussion_history, alive)
+                self._belief_graph.check_redirect(
+                    name, action, current_target, alive,
+                )
 
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action,
@@ -183,6 +226,19 @@ class MafiaGameOrchestrator:
             if vote_target:
                 self.gs.votes[name] = vote_target
 
+                # BeliefGraph: check for late bandwagon
+                self._belief_graph.check_late_bandwagon(
+                    name, vote_target, reasoning or "",
+                    self.gs.votes,
+                )
+
+                # BeliefGraph: check for instahammer
+                self._belief_graph.check_instahammer(
+                    name,
+                    len(self.gs.votes) - 1,  # votes before this one
+                    len(alive),
+                )
+
         eliminated = self.gs.tally_votes()
         print_vote_tally(self.gs.votes, eliminated)
 
@@ -194,6 +250,9 @@ class MafiaGameOrchestrator:
             )
         else:
             await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
+
+        # Reset per-round BeliefGraph tracking (keep cumulative flags)
+        self._belief_graph.reset_round()
 
     async def _run_night_phase(self) -> None:
         if self.gs.check_win_condition():
@@ -350,3 +409,31 @@ class MafiaGameOrchestrator:
             if target.lower() in text_lower:
                 return target
         return None
+
+    @staticmethod
+    def _get_current_consensus(
+        discussion_history: list[str], alive: list[str],
+    ) -> str | None:
+        """
+        Identify the player most frequently mentioned in accusatory
+        context across the discussion history. Used by BeliefGraph
+        to detect redirects away from the consensus target.
+        """
+        if not discussion_history:
+            return None
+        mention_counts: dict[str, int] = {name: 0 for name in alive}
+        accusation_words = {
+            "suspect", "vote", "sus", "mafia", "guilty", "suspicious",
+            "accuse", "hammer", "lynch",
+        }
+        for line in discussion_history:
+            line_lower = line.lower()
+            if not any(w in line_lower for w in accusation_words):
+                continue
+            speaker = line.split(":", 1)[0].strip() if ":" in line else ""
+            for name in alive:
+                if name.lower() in line_lower and name != speaker:
+                    mention_counts[name] += 1
+        if not any(mention_counts.values()):
+            return None
+        return max(mention_counts, key=lambda k: mention_counts[k])

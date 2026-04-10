@@ -168,3 +168,75 @@ vote" hits differently than "we might eliminate Mafia this round." This makes
 you risk-averse in ways that are sometimes right and sometimes exactly what
 a Mafia player wants from you.
 """
+
+# ------------------------------------------------------------------ #
+#  Strategic Glossary ("Llama" Upgrade)                                #
+# ------------------------------------------------------------------ #
+# Competitive Mafia terminology that agents must recognise and reason
+# about. Replaces pure "quote-hunting" with pattern recognition.
+
+STRATEGIC_GLOSSARY = """
+STRATEGIC PATTERN VOCABULARY (know these — they happen every game):
+
+BUSING: A Mafia member votes against their own teammate to look like
+Town. If someone eagerly votes a player who turns out to be Mafia,
+ask: did they already know? Busing is a sacrifice play. It costs
+Mafia a member but buys the busser enormous credibility.
+
+LYNCH-BAIT: Keeping a quiet Town player alive specifically to frame
+them later. Mafia avoids killing the person who is not talking much
+because a silent player is an easy future target. If someone quiet
+has survived suspiciously long, ask who benefits from their survival.
+
+TUNNELING: Obsessively targeting one person across multiple rounds,
+ignoring new evidence. Tunnelers repeat the same accusation without
+updating. Sometimes it is a genuine read. Often it is someone who
+locked in early and stopped thinking. Sometimes it is Mafia using
+repetition to manufacture consensus.
+
+WAGON-STEERING: Subtly guiding the group toward a specific vote
+target without being the one to name them first. The steerer asks
+leading questions, amplifies one accusation, and suppresses
+alternatives. Watch for who benefits from where the vote lands.
+
+INSTAHAMMER: Voting immediately when enough votes exist to eliminate,
+cutting off further discussion. Town benefits from more discussion.
+Mafia benefits from less. An instahammer without new reasoning is
+a scum tell.
+"""
+
+# ------------------------------------------------------------------ #
+#  Incentive Reasoning (replaces pure quote-hunting)                   #
+# ------------------------------------------------------------------ #
+
+INCENTIVE_REASONING = """
+INCENTIVE ANALYSIS (think about this before every vote):
+Instead of hunting for exact quotes as proof, ask yourself:
+  - Who benefits from this player's death?
+  - Who benefits from this player staying alive?
+  - Who pushed hardest for this target, and what do they gain?
+  - If this target flips Town, who looks better? Who looks worse?
+
+Quotes are evidence. Incentives are the frame that makes evidence
+meaningful. A quote without context is trivia. A quote plus "who
+benefits" is a read.
+"""
+
+# ------------------------------------------------------------------ #
+#  Reflexion Loop / Self-Critique                                      #
+# ------------------------------------------------------------------ #
+# Injected before the ACTION block to force agents to check their
+# own reasoning for manipulation, circular logic, and quote-trapping.
+
+SELF_CRITIQUE = """
+SELF-CRITIQUE (run this check before your ACTION):
+Before you act, answer these honestly in your REASONING:
+  1. Am I stuck demanding exact quotes while a manipulator steers the room?
+  2. Am I tunneling on one player and ignoring new information?
+  3. Is the group going in circles? Am I part of the loop?
+  4. Who set the current agenda? Could they benefit from where this is heading?
+  5. Have I actually updated my read this round, or am I repeating myself?
+
+If the answer to any of these is "yes", CHANGE SOMETHING. New target,
+new angle, new question. Do not keep doing what is not working.
+"""

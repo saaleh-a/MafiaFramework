@@ -19,6 +19,9 @@ from prompts.frameworks import (
     CARNEGIE_EXECUTION,
     CARNEGIE_VILLAGER,
     BEHAVIOURAL_PSYCH,
+    STRATEGIC_GLOSSARY,
+    INCENTIVE_REASONING,
+    SELF_CRITIQUE,
 )
 from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT, CONVERSATIONAL_RULE
 from prompts.personalities import PERSONALITIES
@@ -160,11 +163,14 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
         SUN_TZU,
         MACHIAVELLI,
         CARNEGIE_EXECUTION,
+        STRATEGIC_GLOSSARY,
+        INCENTIVE_REASONING,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            + SELF_CRITIQUE + "\n"
             "ACTION: <speech or target name>\n"
             "Both sections must use first person. Never analyze yourself from the outside.\n"
             f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
@@ -182,6 +188,8 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
         CONVERSATIONAL_RULE,
         GAME_THEORY,
         SUN_TZU,
+        STRATEGIC_GLOSSARY,
+        INCENTIVE_REASONING,
         # Partial Carnegie - just the blending-in elements
         (
             "SOCIAL COVER:\nAppear as a regular Town member. Show the same concern, "
@@ -190,11 +198,29 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
             "knowledge, your cover is broken. Let others arrive at conclusions you "
             "have already reached. Never be the first to name your own certainty."
         ),
+        # Iroh Protocol: identity reveal and sharing strategy
+        (
+            "IDENTITY REVEAL PROTOCOL (Iroh Protocol):\n"
+            "If the group suspects you enough that you may be voted out, "
+            "you MUST reveal your role as Detective to survive. Dying with "
+            "unrevealed information helps nobody.\n\n"
+            "SHARING INNOCENT RESULTS:\n"
+            "Do NOT hoard Innocent investigation results waiting for a 'Red' check. "
+            "Sharing that a player is confirmed Innocent NARROWS THE SEARCH SPACE "
+            "for the entire Town. An Innocent result is not a wasted investigation — "
+            "it eliminates a suspect and builds your credibility. "
+            "Strategically share Innocent findings when:\n"
+            "  - That player is being wrongly accused (save them)\n"
+            "  - The Town is going in circles (give them a confirmed clear)\n"
+            "  - You need credibility (prove your role through accurate results)\n\n"
+            "When the system tells you to REVEAL_IDENTITY, do so in your ACTION."
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            + SELF_CRITIQUE + "\n"
             "ACTION: <speech or target name>\n"
             "Both sections must use first person. Never analyze yourself from the outside.\n"
             f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
@@ -212,11 +238,22 @@ def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str
         CONVERSATIONAL_RULE,
         GAME_THEORY,
         SUN_TZU,
+        STRATEGIC_GLOSSARY,
+        INCENTIVE_REASONING,
+        # Iroh Protocol for Doctor
+        (
+            "IDENTITY REVEAL PROTOCOL (Iroh Protocol):\n"
+            "If the group suspects you enough that you may be voted out, "
+            "you MUST reveal your role as Doctor to survive. A dead Doctor "
+            "protects nobody. Dying to maintain cover is a net loss for Town.\n\n"
+            "When the system tells you to REVEAL_IDENTITY, do so in your ACTION."
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            + SELF_CRITIQUE + "\n"
             "ACTION: <speech or target name>\n"
             "Both sections must use first person. Never analyze yourself from the outside.\n"
             f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
@@ -234,11 +271,14 @@ def build_villager_prompt(name: str, archetype: str, personality: str = "") -> s
         CONVERSATIONAL_RULE,
         CARNEGIE_VILLAGER,
         BEHAVIOURAL_PSYCH,
+        STRATEGIC_GLOSSARY,
+        INCENTIVE_REASONING,
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"
+            + SELF_CRITIQUE + "\n"
             "ACTION: <speech or target name>\n"
             "Both sections must use first person. Never analyze yourself from the outside.\n"
             f"NEVER vote for yourself. \"VOTE: {name}\" is INVALID and will be rejected.\n"
