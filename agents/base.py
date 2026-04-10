@@ -136,24 +136,15 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     return reasoning, action
 
 
-# Corporate-speak words that trigger a slang-enforcement retry.
-# Imported from archetypes at module level would create a circular
-# dependency, so we define the check list here independently.
-_CORPORATE_WORDS = {
-    "consistent", "evidence", "alignment", "perspective",
-    "analysis", "framework", "strategic", "systematic",
-    "comprehensive", "methodology", "transparency", "scrutinize",
-    "implicate", "corroborate", "consensus", "deliberate",
-    "plausible", "credibility", "substantive", "articulate",
-}
-
-_CORPORATE_THRESHOLD = 3  # more than this many corporate words → retry
-
-
-def _count_corporate_words(text: str) -> int:
-    """Count how many distinct corporate-speak words appear in *text*."""
-    text_lower = text.lower()
-    return sum(1 for w in _CORPORATE_WORDS if w in text_lower)
+def _extract_tool_result(full_text: str) -> str | None:
+    """
+    Extract a tool call result from the response text.
+    Tool results appear as VOTE: or TARGET: from our @tool functions.
+    """
+    for prefix in ("VOTE:", "TARGET:"):
+        if prefix in full_text:
+            return full_text.split(prefix, 1)[1].strip()
+    return None
 
 
 async def run_agent_stream(
@@ -169,13 +160,15 @@ async def run_agent_stream(
     genuine memory of every prior turn — it can reference what it and
     others actually said instead of confabulating.
 
+    Corporate-speak enforcement is now handled by agent_middleware
+    (agents/middleware.py) registered on the Agent — not here.
+
     Wraps the streaming call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
     Retries up to _MAX_RETRIES times if the model returns a
     content-filter refusal or a corrupted response (e.g. REASONING
     leaked into the ACTION section with no real action text).
     """
-    last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
             full_text = ""
@@ -190,6 +183,13 @@ async def run_agent_stream(
 
             # Best-effort: strip any residual refusal fragments
             full_text = _strip_refusal(full_text)
+
+            # Check for structured tool call results first
+            tool_result = _extract_tool_result(full_text)
+            if tool_result:
+                reasoning, _ = parse_reasoning_action(full_text)
+                return reasoning, tool_result
+
             reasoning, action = parse_reasoning_action(full_text)
 
             # If the action is empty (e.g. REASONING leaked into ACTION
@@ -197,25 +197,8 @@ async def run_agent_stream(
             if not action.strip() and attempt < _MAX_RETRIES:
                 continue
 
-            # Corporate-speak enforcement: if the ACTION section is
-            # loaded with boardroom vocabulary, retry with a hint to
-            # use slang.  Only retry once for this — after that, accept
-            # whatever comes back to avoid infinite loops.
-            if (
-                _count_corporate_words(action) >= _CORPORATE_THRESHOLD
-                and attempt < 1
-            ):
-                prompt = (
-                    prompt
-                    + "\n\n⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
-                    "Rewrite using slang. Short words. Road logic. "
-                    "You are in a pub argument, not a boardroom."
-                )
-                continue
-
             return reasoning, action
         except Exception as exc:
-            last_exc = exc
             _handle_api_error(exc)
             raise
 

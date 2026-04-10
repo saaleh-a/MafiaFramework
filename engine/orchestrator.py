@@ -1,10 +1,13 @@
 """
-engine/orchestrator.py - v3
+engine/orchestrator.py - v4
 -----------------------------
 Game loop. Passes archetype through to all display and logging calls.
 Integrates:
   - SuspicionState: structured-intuition suspicion tracking per agent
   - SummaryAgent: Low-cognitive-load narrative summaries per phase
+  - MAF ContextProviders: belief state + memory injected via session.state
+  - MAF Agent middleware: corporate-speak enforcement via pipeline
+  - MAF @tool: structured vote/target actions via tool-calling
 """
 
 import random
@@ -27,6 +30,7 @@ from agents.belief_state import (
     BeliefGraph,
     TemporalConsistencyChecker,
 )
+from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
 from agents.summary   import SummaryAgent
 from agents.memory    import GameMemoryStore
 
@@ -77,6 +81,39 @@ class MafiaGameOrchestrator:
 
         # Temporal consistency: "DeepSeek" slip detection
         self._temporal_checker = TemporalConsistencyChecker()
+
+        # Populate MAF ContextProvider state on each agent's session.
+        # This is how the BeliefStateProvider and CrossGameMemoryProvider
+        # get their data — via session.state, the MAF-idiomatic way.
+        self._sync_provider_state()
+
+    def _sync_provider_state(self) -> None:
+        """
+        Push current game state into each agent's session.state so that
+        MAF ContextProviders can read it during before_run().
+
+        Called once at init and again whenever beliefs/graphs update.
+        """
+        for name, agent in self._agents.items():
+            session = agent.session
+            belief = self._beliefs.get(name)
+
+            # BeliefStateProvider state
+            session.state.setdefault(BeliefStateProvider.DEFAULT_SOURCE_ID, {})
+            belief_state = session.state[BeliefStateProvider.DEFAULT_SOURCE_ID]
+            belief_state["suspicion"] = belief
+            belief_state["archetype"] = agent.archetype
+            belief_state["graph"] = self._belief_graph
+            belief_state["temporal"] = self._temporal_checker
+            belief_state["all_beliefs"] = self._beliefs
+            belief_state["role"] = agent.role
+            belief_state["name"] = name
+
+            # CrossGameMemoryProvider state
+            session.state.setdefault(CrossGameMemoryProvider.DEFAULT_SOURCE_ID, {})
+            mem_state = session.state[CrossGameMemoryProvider.DEFAULT_SOURCE_ID]
+            mem_state["store"] = self._memory
+            mem_state["role"] = agent.role
 
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
@@ -138,51 +175,17 @@ class MafiaGameOrchestrator:
                     continue
                 agent = self._agents[name]
 
-                # Belief State: build belief prompt for this agent
-                belief = self._beliefs.get(name)
-                belief_prefix = ""
-
-                # Inject cross-game memory if available
-                if self._memory:
-                    mem_prefix = self._memory.get_memory_prefix(agent.role)
-                    if mem_prefix:
-                        belief_prefix += mem_prefix + "\n\n"
-
-                if belief:
-                    # Check staleness before building the prompt —
-                    # this updates the frustration flag which
-                    # build_belief_prompt_injection reads.
-                    belief.check_staleness()
-                    belief_prefix = (
-                        build_belief_prompt_injection(belief, agent.archetype)
-                        + "\n\n"
-                    )
-
-                # Inject scum-tell flags from BeliefGraph
-                graph_flags = self._belief_graph.get_flags_for_prompt()
-                if graph_flags:
-                    belief_prefix += graph_flags + "\n\n"
-
-                # Inject temporal slip warnings
-                slip_flags = self._temporal_checker.get_slips_for_prompt()
-                if slip_flags:
-                    belief_prefix += slip_flags + "\n\n"
-
-                # Iroh Protocol: check if Detective/Doctor should reveal
-                if agent.role in ("Detective", "Doctor") and belief:
-                    if belief.should_reveal_identity(name, self._beliefs):
-                        belief_prefix += (
-                            f"⚠ REVEAL_IDENTITY: The group suspects you ({name}) "
-                            f"above the self-preservation threshold. You MUST reveal "
-                            f"your role as {agent.role} in your next ACTION to survive. "
-                            f"Dying with your role hidden helps nobody.\n\n"
-                        )
+                # Sync ContextProvider state before each agent turn.
+                # The BeliefStateProvider and CrossGameMemoryProvider read
+                # from session.state — this is the MAF-idiomatic approach.
+                self._sync_provider_state()
 
                 reasoning, action = await agent.day_discussion(
-                    self.gs, discussion_history, belief_prefix=belief_prefix,
+                    self.gs, discussion_history,
                 )
 
                 # Parse and apply belief updates from reasoning
+                belief = self._beliefs.get(name)
                 if belief and reasoning:
                     updates = parse_belief_updates(reasoning)
                     for target, prob in updates.items():

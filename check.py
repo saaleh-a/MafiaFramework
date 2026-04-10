@@ -13,6 +13,7 @@ load_dotenv()
 
 
 async def main():
+    from agent_framework import Agent
     from agent_framework.foundry import FoundryChatClient
     from azure.identity import AzureCliCredential
 
@@ -26,12 +27,15 @@ async def main():
         credential=AzureCliCredential(),
     )
 
-    agent = client.as_agent(
+    # Use Agent() constructor — the MAF-idiomatic way to create agents.
+    # This enables tools, middleware, context_providers, compaction.
+    agent = Agent(
+        client=client,
         name="SetupCheck",
         instructions="Reply with exactly the text: SETUP OK - nothing else.",
     )
 
-    # v1.0 streaming API: use stream=True in run() (not deprecated run_stream())
+    # v1.0 streaming API: use stream=True in run()
     result = ""
     async for chunk in agent.run("Confirm setup.", stream=True):
         if chunk.text:
