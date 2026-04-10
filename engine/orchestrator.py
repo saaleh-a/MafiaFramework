@@ -312,6 +312,8 @@ class MafiaGameOrchestrator:
                         personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
             if vote_target is None:
+                # Fallback: assign a random valid target when vote parsing fails
+                # (e.g. self-vote, refusal, or unparseable response)
                 eligible = [p for p in alive if p != name]
                 if eligible:
                     vote_target = random.choice(eligible)
@@ -330,9 +332,10 @@ class MafiaGameOrchestrator:
                 )
 
                 # BeliefGraph: check for instahammer
+                votes_before_current = len(self.gs.votes) - 1
                 self._belief_graph.check_instahammer(
                     name,
-                    len(self.gs.votes) - 1,
+                    votes_before_current,
                     len(alive),
                 )
 
