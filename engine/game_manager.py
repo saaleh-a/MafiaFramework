@@ -11,6 +11,7 @@ The same player name gets a different combination every game.
 """
 
 import random
+import sys
 from dataclasses import dataclass
 
 from config.model_registry import AVAILABLE_MODELS, ModelConfig, make_client
@@ -74,6 +75,19 @@ PERSONALITY_EXCLUSIONS: dict[str, list[str]] = {
     "Doctor":    ["TheParasite", "ThePerformer"],
 }
 
+# ------------------------------------------------------------------ #
+#  Archetype-Personality exclusion table                               #
+# ------------------------------------------------------------------ #
+# Some archetype-personality combinations reinforce the same tendency
+# in both layers, producing agents with no internal contrast and no
+# interesting failure mode.  These are banned from co-assignment.
+ARCHETYPE_PERSONALITY_EXCLUSIONS: dict[str, list[str]] = {
+    "Passive":       ["MythBuilder", "TheGhost"],
+    "Overconfident": ["TheParasite"],
+    "Stubborn":      ["MythBuilder"],
+    "Diplomatic":    ["TheConfessor"],
+}
+
 # No personality may appear more than this many times per game.
 _PERSONALITY_FREQUENCY_CAP = 2
 
@@ -82,11 +96,13 @@ def _pick_personality_constrained(
     role: str,
     current_counts: dict[str, int],
     demo: bool = False,
+    archetype: str = "",
 ) -> str:
     """
     Pick a personality that respects:
       1. The role-personality exclusion table.
-      2. The per-game frequency cap.
+      2. The archetype-personality exclusion table.
+      3. The per-game frequency cap.
 
     Raises ValueError if no valid personality remains (should never
     happen with a reasonable pool / player count).
@@ -94,6 +110,7 @@ def _pick_personality_constrained(
     pool = list(DEMO_PERSONALITIES if demo else ALL_PERSONALITIES)
 
     excluded = set(PERSONALITY_EXCLUSIONS.get(role, []))
+    excluded |= set(ARCHETYPE_PERSONALITY_EXCLUSIONS.get(archetype, []))
     eligible = [
         p for p in pool
         if p not in excluded
@@ -102,8 +119,9 @@ def _pick_personality_constrained(
 
     if not eligible:
         raise ValueError(
-            f"No valid personality for role={role} with current counts "
-            f"{current_counts}. Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
+            f"No valid personality for role={role} archetype={archetype} "
+            f"with current counts {current_counts}. "
+            f"Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
         )
 
     return random.choice(eligible)
@@ -131,11 +149,24 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
         name: _pick_archetype(role_map[name]) for name in names
     }
 
+    # Soft warning: 3+ Analytical players → convergent reasoning risk
+    analytical_count = sum(1 for a in archetype_map.values() if a == "Analytical")
+    if analytical_count >= 3:
+        print(
+            f"  [⚠] {analytical_count} players assigned Analytical archetype — "
+            f"this may produce convergent reasoning and low variance. "
+            f"Consider re-rolling.",
+            file=sys.stderr,
+        )
+
     # 3b. Assign random personality per player (with exclusion + frequency cap)
     personality_map: dict[str, str] = {}
     personality_counts: dict[str, int] = {}
     for name in names:
-        p = _pick_personality_constrained(role_map[name], personality_counts, demo)
+        p = _pick_personality_constrained(
+            role_map[name], personality_counts, demo,
+            archetype=archetype_map[name],
+        )
         personality_map[name] = p
         personality_counts[p] = personality_counts.get(p, 0) + 1
 
