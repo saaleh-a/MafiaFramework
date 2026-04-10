@@ -28,6 +28,11 @@ class SummaryAgent:
     """
     Generates concise narrative summaries from game state and log.
 
+    SECURITY: This agent must NEVER expose the ``role`` attribute of
+    any living player.  Only ``is_revealed is True`` players (dead /
+    eliminated) may have their role displayed.  All summary methods
+    must respect this invariant.
+
     Usage:
         summary_agent = SummaryAgent()
         narrative = summary_agent.summarize(game_state)
@@ -95,8 +100,15 @@ class SummaryAgent:
     def _get_current_target(
         self, entries: list[LogEntry], alive: list[str]
     ) -> str | None:
-        """Identify who is being targeted most in recent discussion."""
-        # Count name mentions in recent actions (excluding narrator)
+        """
+        Identify who is being targeted most in recent discussion.
+
+        Ghost filtering: only count mentions of *alive* players.
+        Dead players are excluded from the mention map so that
+        discussion about a dead Mafia member doesn't surface as the
+        "Current Target".
+        """
+        # Only track alive players — dead players are ghosts
         mention_counts: dict[str, int] = {name: 0 for name in alive}
         accusation_pattern = re.compile(
             r"\b(?:suspect|vote|accuse|suspicious|mafia|guilty)\b",

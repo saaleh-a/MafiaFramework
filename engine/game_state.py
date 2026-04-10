@@ -18,6 +18,7 @@ class PlayerState:
     personality: str   = ""   # performance layer (e.g. "TheGhost")
     is_alive: bool     = True
     is_revealed: bool  = False
+    eliminated_round: int | None = None  # round in which the player was eliminated
 
 
 @dataclass
@@ -65,6 +66,11 @@ class GameState:
         return None
 
     def get_public_state_summary(self) -> str:
+        """
+        Summary safe for non-omniscient consumers (villager prompts,
+        summary agent).  Only reveals roles of players where
+        ``is_revealed is True``.
+        """
         alive = self.get_alive_players()
         dead  = [
             f"{n} ({p.role})"
@@ -96,11 +102,23 @@ class GameState:
         leaders   = [n for n, c in counts.items() if c == max_votes]
         return leaders[0] if len(leaders) == 1 else None
 
+    def get_tied_players(self) -> list[str]:
+        """Return the list of players tied for the most votes, or [] if no tie."""
+        if not self.votes:
+            return []
+        counts: dict[str, int] = {}
+        for target in self.votes.values():
+            counts[target] = counts.get(target, 0) + 1
+        max_votes = max(counts.values())
+        leaders = [n for n, c in counts.items() if c == max_votes]
+        return leaders if len(leaders) > 1 else []
+
     def eliminate_player(self, name: str) -> None:
         if name in self.players:
-            self.players[name].is_alive   = False
-            self.players[name].is_revealed = True
-            self.eliminated_this_round     = name
+            self.players[name].is_alive         = False
+            self.players[name].is_revealed      = True
+            self.players[name].eliminated_round  = self.round_number
+            self.eliminated_this_round           = name
 
     def apply_night_actions(self) -> tuple[str | None, bool]:
         if self.night_kill_target is None:

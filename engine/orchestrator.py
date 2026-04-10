@@ -17,6 +17,7 @@ v4 changes (from v3):
 """
 
 import random
+import re
 import sys
 from engine.game_state import GameState, GamePhase
 from engine.game_log import (
@@ -229,7 +230,71 @@ class MafiaGameOrchestrator:
 
         await self._narrate("Announce voting time. Players must choose who to eliminate.")
 
-        for name in alive:
+        await self._collect_votes(alive, discussion_history)
+
+        eliminated = self.gs.tally_votes()
+        tied_players = self.gs.get_tied_players()
+
+        # ----------------------------------------------------------------
+        #  Tie-Break Protocol (two stages)
+        # ----------------------------------------------------------------
+        if not eliminated and tied_players:
+            print_vote_tally(self.gs.votes, None)
+            await self._narrate(
+                f"The vote is tied between {', '.join(tied_players)}! "
+                f"They will now state their defence before a decisive re-vote."
+            )
+
+            # Stage 1 — Defence Phase: each tied player gets a turn
+            print_phase_header("TIE-BREAK: DEFENCE", self.gs.round_number)
+            for name in tied_players:
+                if name not in self._agents:
+                    continue
+                agent = self._agents[name]
+                reasoning, action = await agent.day_discussion(
+                    self.gs, discussion_history + [
+                        f"[SYSTEM]: {name}, you are tied for elimination. "
+                        f"State your case to the town."
+                    ],
+                )
+                self.gs.log(name, agent.role, agent.archetype, reasoning, action)
+                self._print(name, agent.role, agent.archetype, reasoning, action,
+                            personality=getattr(agent, 'personality', ''))
+                discussion_history.append(f"{name} (DEFENCE): {action}")
+
+            # Stage 2 — Decisive Vote: everyone *except* tied players
+            print_phase_header("TIE-BREAK: DECISIVE VOTE", self.gs.round_number)
+            self.gs.votes = {}  # reset for re-vote
+            decisive_voters = [p for p in alive if p not in tied_players]
+            await self._collect_votes(decisive_voters, discussion_history)
+
+            eliminated = self.gs.tally_votes()
+            tied_again = self.gs.get_tied_players()
+
+            # No-Kill Fallback: if a second tie occurs, no elimination
+            if not eliminated and tied_again:
+                eliminated = None
+
+        print_vote_tally(self.gs.votes, eliminated)
+
+        if eliminated:
+            eliminated_role = self.gs.players[eliminated].role
+            self.gs.eliminate_player(eliminated)
+            await self._narrate(
+                f"{eliminated} eliminated by vote. Role: {eliminated_role}. React dramatically."
+            )
+        else:
+            await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
+
+        # Reset per-round BeliefGraph tracking (keep cumulative flags)
+        self._belief_graph.reset_round()
+
+    async def _collect_votes(
+        self, voters: list[str], discussion_history: list[str],
+    ) -> None:
+        """Run a vote round for *voters*, populating ``self.gs.votes``."""
+        alive = self.gs.get_alive_players()
+        for name in voters:
             if name not in self._agents:
                 continue
             agent = self._agents[name]
@@ -267,26 +332,12 @@ class MafiaGameOrchestrator:
                 )
 
                 # BeliefGraph: check for instahammer
+                votes_before_current = len(self.gs.votes) - 1
                 self._belief_graph.check_instahammer(
                     name,
-                    len(self.gs.votes) - 1,  # votes before this one
+                    votes_before_current,
                     len(alive),
                 )
-
-        eliminated = self.gs.tally_votes()
-        print_vote_tally(self.gs.votes, eliminated)
-
-        if eliminated:
-            eliminated_role = self.gs.players[eliminated].role
-            self.gs.eliminate_player(eliminated)
-            await self._narrate(
-                f"{eliminated} eliminated by vote. Role: {eliminated_role}. React dramatically."
-            )
-        else:
-            await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
-
-        # Reset per-round BeliefGraph tracking (keep cumulative flags)
-        self._belief_graph.reset_round()
 
     async def _run_night_phase(self) -> None:
         if self.gs.check_win_condition():
@@ -313,7 +364,17 @@ class MafiaGameOrchestrator:
             if mafia_agent.name not in alive_mafia:
                 continue
             partner_hint = mafia_actions[-1] if mafia_actions else None
-            reasoning, action = await mafia_agent.choose_night_kill(self.gs, partner_hint)
+
+            # Syndicate channel: find partner's previous night reasoning
+            partner_reasoning = None
+            for other in self.mafia:
+                if other.name != mafia_agent.name and other.last_night_reasoning:
+                    partner_reasoning = other.last_night_reasoning
+                    break
+
+            reasoning, action = await mafia_agent.choose_night_kill(
+                self.gs, partner_hint, partner_reasoning,
+            )
             self.gs.log(mafia_agent.name, "Mafia", mafia_agent.archetype, reasoning, action)
             self._print(
                 mafia_agent.name, "Mafia", mafia_agent.archetype,
@@ -418,17 +479,62 @@ class MafiaGameOrchestrator:
         print_agent_action(name, role, archetype, display_reasoning, action, not self.debug, personality=personality)
 
     def _parse_vote(self, action: str, valid_targets: list[str], voter: str) -> str | None:
+        """
+        Intent-based vote parser with three priority tiers.
+
+        Priority 1: Explicit ``VOTE: {name}`` tags.
+        Priority 2: Intent phrases (``I'm voting for …``, ``Staying on …``).
+        Priority 3: Last mentioned valid name (avoids parsing addressees).
+        Hard filter: A self-vote always returns ``None``.
+        """
         text = action.strip()
-        if "VOTE:" in text.upper():
-            after = text.upper().split("VOTE:", 1)[1].strip()
+
+        # ------------------------------------------------------------------
+        # Priority 1 — explicit VOTE: tag
+        # ------------------------------------------------------------------
+        vote_tag = re.search(r"VOTE:\s*(\w+)", text, re.IGNORECASE)
+        if vote_tag:
+            tagged = vote_tag.group(1).strip()
             for target in valid_targets:
-                if target.upper() in after and target != voter:
+                if target.lower() == tagged.lower() and target != voter:
                     return target
+
+        # ------------------------------------------------------------------
+        # Priority 2 — intent phrases
+        # ------------------------------------------------------------------
+        intent_patterns = [
+            r"(?:I(?:'m| am)\s+voting\s+(?:for\s+)?)",
+            r"(?:my\s+vote\s+(?:is\s+(?:for\s+)?|goes?\s+to\s+))",
+            r"(?:I\s+vote\s+(?:for\s+)?)",
+            r"(?:staying\s+on\s+)",
+            r"(?:I(?:'m| am)\s+going\s+with\s+)",
+            r"(?:locking\s+(?:in\s+)?(?:on\s+)?)",
+            r"(?:voting\s+out\s+)",
+            r"(?:I\s+cast\s+(?:my\s+)?vote\s+(?:for\s+)?)",
+        ]
+        combined = "|".join(intent_patterns)
+        intent_match = re.search(
+            rf"(?:{combined})(\w+)", text, re.IGNORECASE,
+        )
+        if intent_match:
+            candidate = intent_match.group(1).strip()
+            for target in valid_targets:
+                if target.lower() == candidate.lower() and target != voter:
+                    return target
+
+        # ------------------------------------------------------------------
+        # Priority 3 — last mentioned valid name
+        # ------------------------------------------------------------------
+        last_found: str | None = None
         text_lower = text.lower()
         for target in valid_targets:
-            if target.lower() in text_lower and target != voter:
-                return target
-        return None
+            # Find the *last* occurrence index for each target
+            idx = text_lower.rfind(target.lower())
+            if idx != -1 and target != voter:
+                if last_found is None or idx > text_lower.rfind(last_found.lower()):
+                    last_found = target
+
+        return last_found  # may be None if nothing matched
 
     @staticmethod
     def _parse_target(action: str, valid_targets: list[str]) -> str | None:
