@@ -8,6 +8,12 @@ Integrates:
   - MAF ContextProviders: belief state + memory injected via session.state
   - MAF Agent middleware: corporate-speak enforcement via pipeline
   - MAF @tool: structured vote/target actions via tool-calling
+
+v4 changes (from v3):
+  - Replaced manual belief_prefix string concatenation with MAF ContextProviders
+  - Added _sync_provider_state() to push game state into session.state
+  - Agents now use Agent() constructor with tools, middleware, compaction
+  - Corporate-speak enforcement moved from base.py retry to agent middleware
 """
 
 import random

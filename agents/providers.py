@@ -118,6 +118,7 @@ class CrossGameMemoryProvider(ContextProvider):
         context: SessionContext,
         state: dict[str, Any],
     ) -> None:
+        """Inject cross-game learnings relevant to this agent's role."""
         store: GameMemoryStore | None = state.get("store")
         role: str = state.get("role", "")
         if not store or not role:

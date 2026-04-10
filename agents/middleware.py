@@ -14,26 +14,19 @@ CorporateSpeakMiddleware:
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable
 
 from agent_framework import AgentContext, agent_middleware
 
-# Corporate-speak words that trigger enforcement.
-_CORPORATE_WORDS = {
-    "consistent", "evidence", "alignment", "perspective",
-    "analysis", "framework", "strategic", "systematic",
-    "comprehensive", "methodology", "transparency", "scrutinize",
-    "implicate", "corroborate", "consensus", "deliberate",
-    "plausible", "credibility", "substantive", "articulate",
-}
+# Import the canonical CORPORATE_WORDS from archetypes to avoid duplication.
+from prompts.archetypes import CORPORATE_WORDS
 
 _CORPORATE_THRESHOLD = 3
 
 
 def _count_corporate(text: str) -> int:
     text_lower = text.lower()
-    return sum(1 for w in _CORPORATE_WORDS if w in text_lower)
+    return sum(1 for w in CORPORATE_WORDS if w in text_lower)
 
 
 def _extract_action(text: str) -> str:
