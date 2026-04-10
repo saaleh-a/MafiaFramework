@@ -187,6 +187,20 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
             "The goal is to sound like a sharp Town player who noticed something real — "
             "not like someone desperately changing the subject. Commit or stay quiet."
         ),
+        # Mafia Coordination Block — "Syndicate" channel
+        (
+            "MAFIA COORDINATION (The Syndicate Channel):\n"
+            "At night, before choosing your kill target, you will see your "
+            f"teammate {partner}'s REASONING block from the previous night "
+            "(if available). This is your coordination channel.\n\n"
+            "You MUST:\n"
+            "  1. Evaluate your teammate's reasoning and their preferred target.\n"
+            "  2. Explicitly state whether you CONFIRM their choice or PIVOT to "
+            "a different target, and WHY.\n"
+            "  3. If you both independently pick the same target, that's your kill.\n"
+            "  4. If you disagree, the second Mafia to act makes the final call.\n\n"
+            "A unified kill is a strong kill. A split means the Town got into your head."
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
@@ -250,6 +264,17 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
             "  - You need credibility (prove your role through accurate results)\n\n"
             "When the system tells you to REVEAL_IDENTITY, do so in your ACTION."
         ),
+        # Claim Protocol — no "laying low" with red-check results
+        (
+            "CLAIM PROTOCOL (MANDATORY):\n"
+            "If your investigation returns MAFIA, you MUST announce it to the "
+            "town in the NEXT day discussion. No laying low. No waiting for a "
+            "'better moment.' Every round you hold a red-check result is a round "
+            "Mafia gets to kill again.\n\n"
+            "HARD RULE: If you have an unannounced Mafia finding in your log, "
+            "your FIRST priority in day discussion is to claim Detective and "
+            "reveal the finding. Everything else is secondary."
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
@@ -283,6 +308,22 @@ def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str
             "protects nobody. Dying to maintain cover is a net loss for Town.\n\n"
             "When the system tells you to REVEAL_IDENTITY, do so in your ACTION."
         ),
+        # Value-Protection Heuristic
+        (
+            "VALUE-PROTECTION HEURISTIC (who to protect):\n"
+            "Protect the INFORMATION ENGINE — the player who is producing "
+            "new reads, sharing investigation results, or narrowing the suspect "
+            "pool. This is the player Mafia most needs dead.\n\n"
+            "Do NOT protect the SOCIAL ENGINE — the loudest talker, the one "
+            "who dominates discussion but adds no new information. Loud ≠ "
+            "valuable. A player who talks a lot but says nothing new is not "
+            "a Mafia priority and not worth your protection.\n\n"
+            "PRIORITY ORDER:\n"
+            "  1. Confirmed or claimed Detective (highest value target)\n"
+            "  2. Player who just shared decisive new evidence\n"
+            "  3. Player whose vote pattern has been consistently correct\n"
+            "  4. Yourself (if you are the last remaining protective role)"
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (
@@ -308,6 +349,21 @@ def build_villager_prompt(name: str, archetype: str, personality: str = "") -> s
         BEHAVIOURAL_PSYCH,
         STRATEGIC_GLOSSARY,
         INCENTIVE_REASONING,
+        # Voter Consistency — track vote alliances for Mafia Steering detection
+        (
+            "VOTER CONSISTENCY (anti-Mafia-Steering tool):\n"
+            "Track who votes with whom across rounds. In your REASONING, "
+            "note:\n"
+            "  1. Which players consistently vote TOGETHER — a voting bloc "
+            "that always aligns is suspicious.\n"
+            "  2. Which players always vote AGAINST the eventual kill target — "
+            "they may be Mafia protecting each other.\n"
+            "  3. Which players SWITCH their vote at the last moment to change "
+            "the outcome — this is 'Mafia Steering.'\n\n"
+            "Use this to build a case. 'Alice and Bob have voted together in "
+            "every single round. That is not coincidence.' Concrete vote "
+            "patterns beat gut feelings."
+        ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         voice,
         (

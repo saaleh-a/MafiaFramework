@@ -230,7 +230,71 @@ class MafiaGameOrchestrator:
 
         await self._narrate("Announce voting time. Players must choose who to eliminate.")
 
-        for name in alive:
+        await self._collect_votes(alive, discussion_history)
+
+        eliminated = self.gs.tally_votes()
+        tied_players = self.gs.get_tied_players()
+
+        # ----------------------------------------------------------------
+        #  Tie-Break Protocol (two stages)
+        # ----------------------------------------------------------------
+        if not eliminated and tied_players:
+            print_vote_tally(self.gs.votes, None)
+            await self._narrate(
+                f"The vote is tied between {', '.join(tied_players)}! "
+                f"They will now state their defence before a decisive re-vote."
+            )
+
+            # Stage 1 — Defence Phase: each tied player gets a turn
+            print_phase_header("TIE-BREAK: DEFENCE", self.gs.round_number)
+            for name in tied_players:
+                if name not in self._agents:
+                    continue
+                agent = self._agents[name]
+                reasoning, action = await agent.day_discussion(
+                    self.gs, discussion_history + [
+                        f"[SYSTEM]: {name}, you are tied for elimination. "
+                        f"State your case to the town."
+                    ],
+                )
+                self.gs.log(name, agent.role, agent.archetype, reasoning, action)
+                self._print(name, agent.role, agent.archetype, reasoning, action,
+                            personality=getattr(agent, 'personality', ''))
+                discussion_history.append(f"{name} (DEFENCE): {action}")
+
+            # Stage 2 — Decisive Vote: everyone *except* tied players
+            print_phase_header("TIE-BREAK: DECISIVE VOTE", self.gs.round_number)
+            self.gs.votes = {}  # reset for re-vote
+            decisive_voters = [p for p in alive if p not in tied_players]
+            await self._collect_votes(decisive_voters, discussion_history)
+
+            eliminated = self.gs.tally_votes()
+            tied_again = self.gs.get_tied_players()
+
+            # No-Kill Fallback: if a second tie occurs, no elimination
+            if not eliminated and tied_again:
+                eliminated = None
+
+        print_vote_tally(self.gs.votes, eliminated)
+
+        if eliminated:
+            eliminated_role = self.gs.players[eliminated].role
+            self.gs.eliminate_player(eliminated)
+            await self._narrate(
+                f"{eliminated} eliminated by vote. Role: {eliminated_role}. React dramatically."
+            )
+        else:
+            await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
+
+        # Reset per-round BeliefGraph tracking (keep cumulative flags)
+        self._belief_graph.reset_round()
+
+    async def _collect_votes(
+        self, voters: list[str], discussion_history: list[str],
+    ) -> None:
+        """Run a vote round for *voters*, populating ``self.gs.votes``."""
+        alive = self.gs.get_alive_players()
+        for name in voters:
             if name not in self._agents:
                 continue
             agent = self._agents[name]
@@ -248,8 +312,6 @@ class MafiaGameOrchestrator:
                         personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
             if vote_target is None:
-                # Fallback: assign a random valid target when vote parsing fails
-                # (e.g. self-vote, refusal, or unparseable response)
                 eligible = [p for p in alive if p != name]
                 if eligible:
                     vote_target = random.choice(eligible)
@@ -270,24 +332,9 @@ class MafiaGameOrchestrator:
                 # BeliefGraph: check for instahammer
                 self._belief_graph.check_instahammer(
                     name,
-                    len(self.gs.votes) - 1,  # votes before this one
+                    len(self.gs.votes) - 1,
                     len(alive),
                 )
-
-        eliminated = self.gs.tally_votes()
-        print_vote_tally(self.gs.votes, eliminated)
-
-        if eliminated:
-            eliminated_role = self.gs.players[eliminated].role
-            self.gs.eliminate_player(eliminated)
-            await self._narrate(
-                f"{eliminated} eliminated by vote. Role: {eliminated_role}. React dramatically."
-            )
-        else:
-            await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
-
-        # Reset per-round BeliefGraph tracking (keep cumulative flags)
-        self._belief_graph.reset_round()
 
     async def _run_night_phase(self) -> None:
         if self.gs.check_win_condition():
@@ -314,7 +361,17 @@ class MafiaGameOrchestrator:
             if mafia_agent.name not in alive_mafia:
                 continue
             partner_hint = mafia_actions[-1] if mafia_actions else None
-            reasoning, action = await mafia_agent.choose_night_kill(self.gs, partner_hint)
+
+            # Syndicate channel: find partner's previous night reasoning
+            partner_reasoning = None
+            for other in self.mafia:
+                if other.name != mafia_agent.name and other.last_night_reasoning:
+                    partner_reasoning = other.last_night_reasoning
+                    break
+
+            reasoning, action = await mafia_agent.choose_night_kill(
+                self.gs, partner_hint, partner_reasoning,
+            )
             self.gs.log(mafia_agent.name, "Mafia", mafia_agent.archetype, reasoning, action)
             self._print(
                 mafia_agent.name, "Mafia", mafia_agent.archetype,

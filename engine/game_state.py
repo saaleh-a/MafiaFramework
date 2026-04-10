@@ -97,6 +97,17 @@ class GameState:
         leaders   = [n for n, c in counts.items() if c == max_votes]
         return leaders[0] if len(leaders) == 1 else None
 
+    def get_tied_players(self) -> list[str]:
+        """Return the list of players tied for the most votes, or [] if no tie."""
+        if not self.votes:
+            return []
+        counts: dict[str, int] = {}
+        for target in self.votes.values():
+            counts[target] = counts.get(target, 0) + 1
+        max_votes = max(counts.values())
+        leaders = [n for n, c in counts.items() if c == max_votes]
+        return leaders if len(leaders) > 1 else []
+
     def eliminate_player(self, name: str) -> None:
         if name in self.players:
             self.players[name].is_alive         = False
