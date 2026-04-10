@@ -110,6 +110,9 @@ class MafiaGameOrchestrator:
         # Temporal consistency: "DeepSeek" slip detection
         self._temporal_checker = TemporalConsistencyChecker()
 
+        # Track vote parse failures per agent for format reinforcement
+        self._vote_parse_failures: dict[str, int] = {}
+
         # Populate MAF ContextProvider state on each agent's session.
         # This is how the BeliefStateProvider and CrossGameMemoryProvider
         # get their data — via session.state, the MAF-idiomatic way.
@@ -136,6 +139,15 @@ class MafiaGameOrchestrator:
             belief_state["all_beliefs"] = self._beliefs
             belief_state["role"] = agent.role
             belief_state["name"] = name
+
+            # Pass detective findings for Iroh Protocol red-check detection
+            if agent.role == "Detective" and hasattr(agent, "findings"):
+                belief_state["findings"] = agent.findings
+            else:
+                belief_state["findings"] = {}
+
+            # Pass vote parse failure count for format reinforcement
+            belief_state["vote_parse_failures"] = self._vote_parse_failures.get(name, 0)
 
             # CrossGameMemoryProvider state
             session.state.setdefault(CrossGameMemoryProvider.DEFAULT_SOURCE_ID, {})
@@ -303,9 +315,14 @@ class MafiaGameOrchestrator:
                 # from session.state — this is the MAF-idiomatic approach.
                 self._sync_provider_state()
 
+                # Compress history for late-game context management
+                compressed = self._summary.compress_discussion_history(
+                    discussion_history, self.gs,
+                )
+
                 try:
                     reasoning, action = await agent.day_discussion(
-                        self.gs, discussion_history,
+                        self.gs, compressed,
                     )
                 except Exception as exc:
                     logger.error("[%s] Discussion failed: %s", name, exc)
@@ -436,10 +453,27 @@ class MafiaGameOrchestrator:
                         personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
             if vote_target is None:
-                # Fallback: assign a random valid target when vote parsing fails
-                # (e.g. self-vote, refusal, or unparseable response)
+                # Track parse failure for format reinforcement next round
+                self._vote_parse_failures[name] = (
+                    self._vote_parse_failures.get(name, 0) + 1
+                )
+                # Semantic extraction: use belief state to infer vote intent
+                belief = self._beliefs.get(name)
                 eligible = [p for p in alive if p != name]
-                if eligible:
+                if belief and eligible:
+                    scored = [
+                        (p, belief.probabilities.get(p, 0.0)) for p in eligible
+                    ]
+                    scored.sort(key=lambda x: -x[1])
+                    vote_target = scored[0][0]
+                    raw_preview = action[:200].replace("\n", " ")
+                    print(
+                        f"  [!] {name}'s vote was unparseable; "
+                        f"belief-state fallback -> {vote_target}\n"
+                        f"      Raw action text: \"{raw_preview}\"",
+                        file=sys.stderr,
+                    )
+                elif eligible:
                     vote_target = random.choice(eligible)
                     # Include raw text so failures are diagnosable
                     raw_preview = action[:200].replace("\n", " ")

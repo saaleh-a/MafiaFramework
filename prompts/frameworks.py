@@ -239,4 +239,18 @@ Before you act, answer these honestly in your REASONING:
 
 If the answer to any of these is "yes", CHANGE SOMETHING. New target,
 new angle, new question. Do not keep doing what is not working.
+
+ANTI-PIVOT PROTOCOL (before changing your main suspect after an elimination):
+If someone you suspected was eliminated and flipped Town (green), STOP before
+pivoting to a new suspect. Answer these THREE questions:
+  1. COUNTERFACTUAL: "If they had flipped Mafia (red), would I still believe
+     what I believe about my new suspect?" If the answer is YES, your pivot
+     is based on the flip result, not on evidence. That is outcome bias.
+  2. CONSISTENCY: "What behaviour of my new suspect made me suspicious BEFORE
+     the flip?" If you cannot name specific pre-flip evidence, you are
+     anchoring on the elimination result, not on observation.
+  3. ALTERNATIVE: "Name one OTHER player whose behaviour also fits the pattern
+     I am attributing to my new suspect." If you cannot, you are tunneling
+     on the most convenient narrative, not the most supported one.
+Only pivot if you can answer all three without relying on the flip result.
 """

@@ -67,6 +67,18 @@ class BeliefStateProvider(ContextProvider):
         belief_text = build_belief_prompt_injection(suspicion, archetype)
         context.extend_instructions(self.source_id, belief_text)
 
+        # Vote format reinforcement: if previous vote was unparseable,
+        # inject a stronger format requirement
+        vote_failures: int = state.get("vote_parse_failures", 0)
+        if vote_failures > 0:
+            context.extend_instructions(
+                self.source_id,
+                "⚠ VOTE FORMAT REMINDER: Your previous vote could not be parsed. "
+                "Your response MUST contain 'VOTE: [name]' on its own line. "
+                "Use the exact name from the valid targets list. "
+                "Example: 'VOTE: Alice'",
+            )
+
         # Scum-tell flags from BeliefGraph
         graph: BeliefGraph | None = state.get("graph")
         if graph:
@@ -81,18 +93,47 @@ class BeliefStateProvider(ContextProvider):
             if slips:
                 context.extend_instructions(self.source_id, slips)
 
-        # Iroh Protocol: identity reveal
+        # Iroh Protocol: graduated identity reveal
         role: str = state.get("role", "")
         name: str = state.get("name", "")
         all_beliefs: dict[str, SuspicionState] | None = state.get("all_beliefs")
         if role in ("Detective", "Doctor") and all_beliefs:
-            if suspicion.should_reveal_identity(name, all_beliefs):
+            # Check if Detective has a red check (confirmed Mafia finding)
+            has_red_check = False
+            if role == "Detective":
+                # The detective agent stores findings; check if any are Mafia
+                # We access this through the session state or agent attribute
+                findings = state.get("findings", {})
+                has_red_check = any(v == "Mafia" for v in findings.values())
+
+            iroh_level = suspicion.get_iroh_level(
+                name, all_beliefs, has_red_check=has_red_check,
+            )
+            if iroh_level == "soft_hint":
                 context.extend_instructions(
                     self.source_id,
-                    f"⚠ REVEAL_IDENTITY: The group suspects you ({name}) "
-                    f"above the self-preservation threshold. You MUST reveal "
-                    f"your role as {role} in your next ACTION to survive. "
-                    f"Dying with your role hidden helps nobody.",
+                    f"⚠ IROH PROTOCOL (SOFT HINT): You ({name}) are attracting "
+                    f"moderate suspicion. Drop a hint that you have information "
+                    f"that would change the current vote. Say something like "
+                    f"'I have information that would change this vote' without "
+                    f"revealing your role yet. This signals value to the Town.",
+                )
+            elif iroh_level == "hard_claim":
+                context.extend_instructions(
+                    self.source_id,
+                    f"⚠ IROH PROTOCOL (HARD CLAIM): Suspicion against you "
+                    f"({name}) is rising dangerously. You SHOULD claim your "
+                    f"role as {role} conditionally: 'I am {role}. I will "
+                    f"reveal what I know if the vote is not redirected.' "
+                    f"This forces the Town to reconsider.",
+                )
+            elif iroh_level == "full_reveal":
+                context.extend_instructions(
+                    self.source_id,
+                    f"⚠ IROH PROTOCOL (FULL REVEAL): You ({name}) are about "
+                    f"to be eliminated. You MUST reveal your role as {role} "
+                    f"immediately with ALL information you have. Dying with "
+                    f"your role hidden helps nobody. Reveal NOW.",
                 )
 
 
