@@ -190,14 +190,12 @@ MafiaFramework/
    ```dotenv
    FOUNDRY_PROJECT_ENDPOINT=https://<your-resource>.services.ai.azure.com
    FOUNDRY_MODEL=gpt-4o-mini
-   FOUNDRY_MODEL_4O=gpt-4o
    ```
 
    | Variable                   | Required | Description                                                    |
    |----------------------------|----------|----------------------------------------------------------------|
    | `FOUNDRY_PROJECT_ENDPOINT` | Yes      | Your Azure AI Foundry project endpoint URL                     |
-   | `FOUNDRY_MODEL`            | No       | Default model deployment name (defaults to `gpt-4o-mini`)      |
-   | `FOUNDRY_MODEL_4O`         | No       | Secondary model deployment name (defaults to `FOUNDRY_MODEL`)  |
+   | `FOUNDRY_MODEL`            | No       | Model deployment name (defaults to `gpt-4o-mini`)              |
 
    > **Important:** The model names must exactly match deployed model names in your Azure AI Foundry project.
 
@@ -276,12 +274,9 @@ Edit `config/model_registry.py` to add or remove models from the pool. Each game
 
 ```python
 # Display names are derived automatically from the model_id via .upper().
-# The secondary model is only added when FOUNDRY_MODEL_4O differs from FOUNDRY_MODEL.
 AVAILABLE_MODELS = [
     ModelConfig(name=_display_name(_primary_model), model_id=_primary_model, short="4om"),
 ]
-# If FOUNDRY_MODEL_4O is set and differs:
-#   ModelConfig(name=_display_name(_secondary_model), model_id=_secondary_model, short="4o "),
 ```
 
 > Every model in the pool **must** have a matching deployment in your Azure AI Foundry project. A missing deployment causes a `DeploymentNotFound` error at runtime.
@@ -375,10 +370,9 @@ for this resource does not exist.', 'code': 'DeploymentNotFound'}}
 
 **Fix:**
 1. Open your Azure AI Foundry project and verify the exact deployment names.
-2. Update `FOUNDRY_MODEL` and/or `FOUNDRY_MODEL_4O` in your `.env` to match.
-3. If you only have one model deployed, just set `FOUNDRY_MODEL`; `FOUNDRY_MODEL_4O` will automatically fall back to it.
-4. If you just created a deployment, wait approximately 5 minutes and retry.
-5. Run `python check.py` to verify connectivity before starting a game.
+2. Update `FOUNDRY_MODEL` in your `.env` to match.
+3. If you just created a deployment, wait approximately 5 minutes and retry.
+4. Run `python check.py` to verify connectivity before starting a game.
 
 ### `FOUNDRY_PROJECT_ENDPOINT is not set`
 

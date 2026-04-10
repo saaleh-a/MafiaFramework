@@ -198,7 +198,7 @@ def _handle_api_error(exc: Exception) -> None:
             "does not match any active deployment in your project.\n\n"
             "How to fix:\n"
             "  1. Open Azure AI Foundry and check your deployed model names.\n"
-            "  2. Set FOUNDRY_MODEL (and optionally FOUNDRY_MODEL_4O) in your\n"
+            "  2. Set FOUNDRY_MODEL in your\n"
             "     .env file to match an active deployment name.\n"
             "  3. If you just created a deployment, wait ~5 minutes and retry.\n"
             "  4. Run  python check.py  to verify connectivity.\n",
