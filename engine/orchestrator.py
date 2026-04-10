@@ -4,7 +4,6 @@ engine/orchestrator.py - v3
 Game loop. Passes archetype through to all display and logging calls.
 Integrates:
   - SuspicionState: structured-intuition suspicion tracking per agent
-  - SchedulerAgent: Quote-loop detection and Chaos Events
   - SummaryAgent: Low-cognitive-load narrative summaries per phase
 """
 
@@ -26,7 +25,6 @@ from agents.belief_state import (
     parse_belief_updates,
     apply_overconfidence_gate,
 )
-from agents.scheduler import SchedulerAgent
 from agents.summary   import SummaryAgent
 
 
@@ -64,9 +62,6 @@ class MafiaGameOrchestrator:
             belief.initialize(others, num_mafia=2)
             self._beliefs[name] = belief
 
-        # Scheduler: monitors for quote-loops and triggers Chaos Events
-        self._scheduler = SchedulerAgent(player_names)
-
         # Summary: generates low-cognitive-load narrative each phase
         self._summary = SummaryAgent()
 
@@ -81,7 +76,6 @@ class MafiaGameOrchestrator:
             await self._run_night_phase()
             self.gs.round_number += 1
             self.gs.reset_round_state()
-            self._scheduler.reset_round()
 
         winner = self.gs.check_win_condition()
         print_game_over(winner, self.gs)
@@ -149,14 +143,6 @@ class MafiaGameOrchestrator:
                             personality=getattr(agent, 'personality', ''))
                 discussion_history.append(f"{name}: {action}")
 
-                # Scheduler: check for quote-loops
-                chaos_event = self._scheduler.observe(
-                    name, action, discussion_history,
-                )
-                if chaos_event:
-                    print(f"\n⚡ {chaos_event}\n")
-                    await self._narrate(chaos_event)
-
         self.gs.phase = GamePhase.DAY_VOTE
         print_phase_header("DAY VOTE", self.gs.round_number)
 
@@ -196,8 +182,6 @@ class MafiaGameOrchestrator:
                     )
             if vote_target:
                 self.gs.votes[name] = vote_target
-                # Track vote changes for scheduler
-                self._scheduler.record_vote_change(name)
 
         eliminated = self.gs.tally_votes()
         print_vote_tally(self.gs.votes, eliminated)
