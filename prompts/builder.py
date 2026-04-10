@@ -172,6 +172,8 @@ NEVER use these phrases or patterns: {prohibited}
 
 {ANTI_AI_STRUCTURE}
 
+{GENZ_REGISTER}
+
 {CORPORATE_PENALTY}
 
 Do not hedge every statement. Do not open with acknowledgement before every point.
