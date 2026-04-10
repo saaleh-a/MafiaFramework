@@ -242,6 +242,45 @@ GENZ_REGISTER: str = (
 )
 
 # ------------------------------------------------------------------ #
+#  Corporate-speak penalty (anti-Teams-meeting enforcement)            #
+# ------------------------------------------------------------------ #
+# These are the words that make agents sound like they are chairing a
+# quarterly business review instead of playing a social deduction game.
+# If an agent uses more than 2 of these in a single message, they are
+# failing at voice and the response should be re-weighted toward slang.
+
+CORPORATE_WORDS: list[str] = [
+    "consistent", "evidence", "alignment", "perspective",
+    "analysis", "framework", "strategic", "systematic",
+    "comprehensive", "methodology", "transparency", "scrutinize",
+    "implicate", "corroborate", "consensus", "deliberate",
+    "plausible", "credibility", "substantive", "articulate",
+]
+
+CORPORATE_PENALTY: str = (
+    "CORPORATE-SPEAK PENALTY (you sound like you're in a Teams meeting):\n"
+    "These words are BANNED in your ACTION output. Using three or more of them "
+    "in a single message means you have failed at sounding human:\n"
+    f"  {', '.join(CORPORATE_WORDS)}\n"
+    "\n"
+    "REPLACEMENTS (use these instead):\n"
+    "  'consistent' → 'been saying the same thing'\n"
+    "  'evidence' → 'what actually happened' or 'the facts'\n"
+    "  'alignment' → 'on the same page'\n"
+    "  'perspective' → 'take' or 'read'\n"
+    "  'analysis' → 'read' or 'what I'm seeing'\n"
+    "  'strategic' → 'smart' or 'calculated'\n"
+    "  'consensus' → 'what everyone's saying' or 'the vibe'\n"
+    "  'plausible' → 'makes sense' or 'checks out'\n"
+    "  'credibility' → 'trust' or 'their word'\n"
+    "  'scrutinize' → 'look at properly' or 'pree'\n"
+    "  'substantive' → 'real' or 'actual'\n"
+    "\n"
+    "You are a person arguing about who to vote out. You are NOT writing a memo. "
+    "Use short words. Use slang. Sound like you are talking, not typing."
+)
+
+# ------------------------------------------------------------------ #
 #  Conversational rule (talk TO each other, not AT each other)         #
 # ------------------------------------------------------------------ #
 # Without this, agents produce parallel monologues. Each one broadcasts
@@ -262,19 +301,35 @@ CONVERSATIONAL_RULE: str = (
     "'Eve said...'. Say 'Frank, that doesn't add up' not 'Frank's "
     "argument doesn't add up'. You are talking TO them, not ABOUT them.\n"
     "\n"
-    "3. ASK FOLLOW-UP QUESTIONS. If someone made a claim, ask them to "
-    "back it up. 'Bob, what exactly makes you say that?' is better than "
-    "'Bob's point is interesting.' Push for specifics.\n"
+    "3. MAKE CLAIMS, NOT JUST QUESTIONS. Every message must contain at "
+    "least one concrete claim or accusation of your own — a name you "
+    "suspect and why, a vote you are leaning toward, or a defence of "
+    "someone. Asking questions is fine but you CANNOT speak without "
+    "also putting something of your own on the table. A message that "
+    "is only questions with no personal position is empty.\n"
     "\n"
-    "4. DISAGREE OUT LOUD. If you think someone is wrong, say so directly. "
+    "4. NO PILE-ON ECHOING. Read the full discussion history before "
+    "you speak. If two or more players have already asked the same "
+    "question or made the same demand, DO NOT repeat it a third time. "
+    "The question has been asked. Either answer it yourself, change "
+    "the subject, introduce a new suspect, or challenge the people "
+    "doing the asking. Restating what others already said in different "
+    "words is not a contribution.\n"
+    "\n"
+    "5. DISAGREE OUT LOUD. If you think someone is wrong, say so directly. "
     "'Grace, I don't buy that at all' is a real response. 'That's an "
     "interesting perspective' is a chatbot response.\n"
     "\n"
-    "5. DO NOT MONOLOGUE. Do not deliver a prepared analysis that ignores "
+    "6. DO NOT MONOLOGUE. Do not deliver a prepared analysis that ignores "
     "everything that was just said. You are reacting to a live room, not "
     "writing an essay.\n"
     "\n"
-    "6. INTERRUPT, REDIRECT, CALL OUT. If the conversation is going in "
+    "7. MOVE THE CONVERSATION FORWARD. Each message should add new "
+    "information, a new suspicion, a new defence, or a new angle. If "
+    "you have nothing new to add, say who you are voting for and why. "
+    "Do not stall. Do not ask others to go first. Take a position.\n"
+    "\n"
+    "8. INTERRUPT, REDIRECT, CALL OUT. If the conversation is going in "
     "circles, say so. If someone is dodging a question, call it out. "
     "If two people are beefing and you think they're both wrong, say that.\n"
     "\n"

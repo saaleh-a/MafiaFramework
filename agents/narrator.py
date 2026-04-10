@@ -1,5 +1,5 @@
 from agents.base import run_agent_stream
-from agent_framework import AgentSession
+from agent_framework import Agent, SlidingWindowStrategy
 from prompts.builder import build_narrator_prompt
 from engine.game_state import GameState
 
@@ -10,12 +10,14 @@ class NarratorAgent:
     archetype = "Impartial"
 
     def __init__(self, client) -> None:
-        self.session = AgentSession()
-        self.agent = client.as_agent(
+        self.agent = Agent(
+            client=client,
             name="Narrator",
             description="Impartial omniscient game master",
             instructions=build_narrator_prompt(),
+            compaction_strategy=SlidingWindowStrategy(keep_last_groups=15),
         )
+        self.session = self.agent.create_session()
 
     async def announce(self, prompt: str, game_state: GameState) -> tuple[str, str]:
         context = (

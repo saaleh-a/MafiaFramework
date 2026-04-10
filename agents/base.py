@@ -136,6 +136,17 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     return reasoning, action
 
 
+def _extract_tool_result(full_text: str) -> str | None:
+    """
+    Extract a tool call result from the response text.
+    Tool results appear as VOTE: or TARGET: from our @tool functions.
+    """
+    for prefix in ("VOTE:", "TARGET:"):
+        if prefix in full_text:
+            return full_text.split(prefix, 1)[1].strip()
+    return None
+
+
 async def run_agent_stream(
     agent,
     prompt: str,
@@ -149,13 +160,15 @@ async def run_agent_stream(
     genuine memory of every prior turn — it can reference what it and
     others actually said instead of confabulating.
 
+    Corporate-speak enforcement is now handled by agent_middleware
+    (agents/middleware.py) registered on the Agent — not here.
+
     Wraps the streaming call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
     Retries up to _MAX_RETRIES times if the model returns a
     content-filter refusal or a corrupted response (e.g. REASONING
     leaked into the ACTION section with no real action text).
     """
-    last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
             full_text = ""
@@ -170,6 +183,13 @@ async def run_agent_stream(
 
             # Best-effort: strip any residual refusal fragments
             full_text = _strip_refusal(full_text)
+
+            # Check for structured tool call results first
+            tool_result = _extract_tool_result(full_text)
+            if tool_result:
+                reasoning, _ = parse_reasoning_action(full_text)
+                return reasoning, tool_result
+
             reasoning, action = parse_reasoning_action(full_text)
 
             # If the action is empty (e.g. REASONING leaked into ACTION
@@ -179,7 +199,6 @@ async def run_agent_stream(
 
             return reasoning, action
         except Exception as exc:
-            last_exc = exc
             _handle_api_error(exc)
             raise
 
@@ -198,7 +217,7 @@ def _handle_api_error(exc: Exception) -> None:
             "does not match any active deployment in your project.\n\n"
             "How to fix:\n"
             "  1. Open Azure AI Foundry and check your deployed model names.\n"
-            "  2. Set FOUNDRY_MODEL (and optionally FOUNDRY_MODEL_4O) in your\n"
+            "  2. Set FOUNDRY_MODEL in your\n"
             "     .env file to match an active deployment name.\n"
             "  3. If you just created a deployment, wait ~5 minutes and retry.\n"
             "  4. Run  python check.py  to verify connectivity.\n",

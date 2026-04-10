@@ -40,6 +40,8 @@ async def run_one_game(debug: bool, quiet: bool, reveal_roles: bool, demo: bool 
         villagers=setup.villagers,
         debug=debug,
         quiet=quiet,
+        memory_store=setup.memory_store,
+        assignments=setup.assignments,
     )
     return await orchestrator.run_game()
 

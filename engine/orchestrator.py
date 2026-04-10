@@ -1,11 +1,19 @@
 """
-engine/orchestrator.py - v3
+engine/orchestrator.py - v4
 -----------------------------
 Game loop. Passes archetype through to all display and logging calls.
 Integrates:
   - SuspicionState: structured-intuition suspicion tracking per agent
-  - SchedulerAgent: Quote-loop detection and Chaos Events
   - SummaryAgent: Low-cognitive-load narrative summaries per phase
+  - MAF ContextProviders: belief state + memory injected via session.state
+  - MAF Agent middleware: corporate-speak enforcement via pipeline
+  - MAF @tool: structured vote/target actions via tool-calling
+
+v4 changes (from v3):
+  - Replaced manual belief_prefix string concatenation with MAF ContextProviders
+  - Added _sync_provider_state() to push game state into session.state
+  - Agents now use Agent() constructor with tools, middleware, compaction
+  - Corporate-speak enforcement moved from base.py retry to agent middleware
 """
 
 import random
@@ -25,9 +33,12 @@ from agents.belief_state import (
     build_belief_prompt_injection,
     parse_belief_updates,
     apply_overconfidence_gate,
+    BeliefGraph,
+    TemporalConsistencyChecker,
 )
-from agents.scheduler import SchedulerAgent
+from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
 from agents.summary   import SummaryAgent
+from agents.memory    import GameMemoryStore
 
 
 class MafiaGameOrchestrator:
@@ -41,6 +52,8 @@ class MafiaGameOrchestrator:
         villagers:    list[VillagerAgent],
         debug:        bool = False,
         quiet:        bool = False,
+        memory_store: GameMemoryStore | None = None,
+        assignments:  list[dict] | None = None,
     ) -> None:
         self.gs        = game_state
         self.narrator  = narrator
@@ -50,6 +63,8 @@ class MafiaGameOrchestrator:
         self.villagers = villagers
         self.debug     = debug
         self.quiet     = quiet
+        self._memory   = memory_store
+        self._assignments = assignments or []
         self._agents: dict[str, any] = {}
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
@@ -64,11 +79,47 @@ class MafiaGameOrchestrator:
             belief.initialize(others, num_mafia=2)
             self._beliefs[name] = belief
 
-        # Scheduler: monitors for quote-loops and triggers Chaos Events
-        self._scheduler = SchedulerAgent(player_names)
-
         # Summary: generates low-cognitive-load narrative each phase
         self._summary = SummaryAgent()
+
+        # BeliefGraph: scum-tell pattern detection (bandwagon, redirect, instahammer)
+        self._belief_graph = BeliefGraph()
+
+        # Temporal consistency: "DeepSeek" slip detection
+        self._temporal_checker = TemporalConsistencyChecker()
+
+        # Populate MAF ContextProvider state on each agent's session.
+        # This is how the BeliefStateProvider and CrossGameMemoryProvider
+        # get their data — via session.state, the MAF-idiomatic way.
+        self._sync_provider_state()
+
+    def _sync_provider_state(self) -> None:
+        """
+        Push current game state into each agent's session.state so that
+        MAF ContextProviders can read it during before_run().
+
+        Called once at init and again whenever beliefs/graphs update.
+        """
+        for name, agent in self._agents.items():
+            session = agent.session
+            belief = self._beliefs.get(name)
+
+            # BeliefStateProvider state
+            session.state.setdefault(BeliefStateProvider.DEFAULT_SOURCE_ID, {})
+            belief_state = session.state[BeliefStateProvider.DEFAULT_SOURCE_ID]
+            belief_state["suspicion"] = belief
+            belief_state["archetype"] = agent.archetype
+            belief_state["graph"] = self._belief_graph
+            belief_state["temporal"] = self._temporal_checker
+            belief_state["all_beliefs"] = self._beliefs
+            belief_state["role"] = agent.role
+            belief_state["name"] = name
+
+            # CrossGameMemoryProvider state
+            session.state.setdefault(CrossGameMemoryProvider.DEFAULT_SOURCE_ID, {})
+            mem_state = session.state[CrossGameMemoryProvider.DEFAULT_SOURCE_ID]
+            mem_state["store"] = self._memory
+            mem_state["role"] = agent.role
 
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
@@ -81,10 +132,19 @@ class MafiaGameOrchestrator:
             await self._run_night_phase()
             self.gs.round_number += 1
             self.gs.reset_round_state()
-            self._scheduler.reset_round()
 
         winner = self.gs.check_win_condition()
         print_game_over(winner, self.gs)
+
+        # Persist cross-game learnings
+        if self._memory:
+            self._memory.record_game_outcome(
+                winner=winner,
+                role_assignments=self._assignments,
+                round_count=self.gs.round_number,
+            )
+            self._memory.save()
+
         return winner
 
     async def _run_day_phase(self) -> None:
@@ -121,20 +181,17 @@ class MafiaGameOrchestrator:
                     continue
                 agent = self._agents[name]
 
-                # Belief State: build belief prompt for this agent
-                belief = self._beliefs.get(name)
-                belief_prefix = ""
-                if belief:
-                    belief_prefix = (
-                        build_belief_prompt_injection(belief, agent.archetype)
-                        + "\n\n"
-                    )
+                # Sync ContextProvider state before each agent turn.
+                # The BeliefStateProvider and CrossGameMemoryProvider read
+                # from session.state — this is the MAF-idiomatic approach.
+                self._sync_provider_state()
 
                 reasoning, action = await agent.day_discussion(
-                    self.gs, discussion_history, belief_prefix=belief_prefix,
+                    self.gs, discussion_history,
                 )
 
                 # Parse and apply belief updates from reasoning
+                belief = self._beliefs.get(name)
                 if belief and reasoning:
                     updates = parse_belief_updates(reasoning)
                     for target, prob in updates.items():
@@ -144,18 +201,24 @@ class MafiaGameOrchestrator:
                 if belief and agent.archetype == "Overconfident":
                     action = apply_overconfidence_gate(action, belief)
 
+                # Track discussion contribution in BeliefGraph
+                self._belief_graph.record_discussion(name)
+
+                # Check for temporal slips in the action
+                self._temporal_checker.check_message(
+                    name, action, self.gs.round_number,
+                )
+
+                # Check for redirects (BeliefGraph)
+                current_target = self._get_current_consensus(discussion_history, alive)
+                self._belief_graph.check_redirect(
+                    name, action, current_target, alive,
+                )
+
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action,
                             personality=getattr(agent, 'personality', ''))
                 discussion_history.append(f"{name}: {action}")
-
-                # Scheduler: check for quote-loops
-                chaos_event = self._scheduler.observe(
-                    name, action, discussion_history,
-                )
-                if chaos_event:
-                    print(f"\n⚡ {chaos_event}\n")
-                    await self._narrate(chaos_event)
 
         self.gs.phase = GamePhase.DAY_VOTE
         print_phase_header("DAY VOTE", self.gs.round_number)
@@ -196,8 +259,19 @@ class MafiaGameOrchestrator:
                     )
             if vote_target:
                 self.gs.votes[name] = vote_target
-                # Track vote changes for scheduler
-                self._scheduler.record_vote_change(name)
+
+                # BeliefGraph: check for late bandwagon
+                self._belief_graph.check_late_bandwagon(
+                    name, vote_target, reasoning or "",
+                    self.gs.votes,
+                )
+
+                # BeliefGraph: check for instahammer
+                self._belief_graph.check_instahammer(
+                    name,
+                    len(self.gs.votes) - 1,  # votes before this one
+                    len(alive),
+                )
 
         eliminated = self.gs.tally_votes()
         print_vote_tally(self.gs.votes, eliminated)
@@ -210,6 +284,9 @@ class MafiaGameOrchestrator:
             )
         else:
             await self._narrate("Vote tied. Nobody eliminated. Town is nervous.")
+
+        # Reset per-round BeliefGraph tracking (keep cumulative flags)
+        self._belief_graph.reset_round()
 
     async def _run_night_phase(self) -> None:
         if self.gs.check_win_condition():
@@ -366,3 +443,31 @@ class MafiaGameOrchestrator:
             if target.lower() in text_lower:
                 return target
         return None
+
+    @staticmethod
+    def _get_current_consensus(
+        discussion_history: list[str], alive: list[str],
+    ) -> str | None:
+        """
+        Identify the player most frequently mentioned in accusatory
+        context across the discussion history. Used by BeliefGraph
+        to detect redirects away from the consensus target.
+        """
+        if not discussion_history:
+            return None
+        mention_counts: dict[str, int] = {name: 0 for name in alive}
+        accusation_words = {
+            "suspect", "vote", "sus", "mafia", "guilty", "suspicious",
+            "accuse", "hammer", "lynch",
+        }
+        for line in discussion_history:
+            line_lower = line.lower()
+            if not any(w in line_lower for w in accusation_words):
+                continue
+            speaker = line.split(":", 1)[0].strip() if ":" in line else ""
+            for name in alive:
+                if name.lower() in line_lower and name != speaker:
+                    mention_counts[name] += 1
+        if not any(mention_counts.values()):
+            return None
+        return max(mention_counts, key=lambda k: mention_counts[k])

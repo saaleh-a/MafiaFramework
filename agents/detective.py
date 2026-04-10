@@ -1,5 +1,8 @@
 from agents.base import run_agent_stream, format_discussion_prompt
-from agent_framework import AgentSession
+from agent_framework import Agent, SlidingWindowStrategy
+from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
+from agents.middleware import corporate_speak_middleware
+from agents.game_tools import cast_vote, choose_target
 from prompts.builder import build_detective_prompt
 from engine.game_state import GameState
 
@@ -12,24 +15,29 @@ class DetectiveAgent:
         self.archetype   = archetype
         self.personality  = personality
         self.findings: dict[str, str] = {}
-        self.session     = AgentSession()
-        self.agent       = client.as_agent(
+        self.agent       = Agent(
+            client=client,
             name=name,
             description=f"[Detective] [{archetype}] [{personality}]",
             instructions=build_detective_prompt(name, archetype, personality),
+            context_providers=[BeliefStateProvider(), CrossGameMemoryProvider()],
+            middleware=[corporate_speak_middleware],
+            tools=[cast_vote, choose_target],
+            compaction_strategy=SlidingWindowStrategy(keep_last_groups=20),
         )
+        self.session     = self.agent.create_session()
 
     def record_finding(self, target: str, result: str) -> None:
         self.findings[target] = result
 
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:
+        """Belief/memory context is injected automatically by MAF ContextProviders."""
         findings_text = "\n".join(f"  {k}: {v}" for k, v in self.findings.items()) or "  Nothing yet."
         discussion = format_discussion_prompt(history, self.name)
         return await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Your private investigation log:\n{findings_text}\n\n"
-            f"{belief_prefix}"
             f"{discussion}\n\n"
             f"Your turn. Max 80 words.",
             session=self.session,
@@ -45,7 +53,7 @@ class DetectiveAgent:
             f"Full discussion:\n{chr(10).join(history)}\n\n"
             f"You are {self.name}. You CANNOT vote for yourself.\n"
             f"Valid targets: {', '.join(targets)}\n"
-            f"ACTION must be: VOTE: [exact name from valid targets]",
+            f"You MUST call the cast_vote tool OR write ACTION: VOTE: [exact name from valid targets]",
             session=self.session,
         )
 
@@ -60,6 +68,6 @@ class DetectiveAgent:
             f"Unchecked: {unchecked}\n\n"
             f"NIGHT. Choose one player to investigate.\n"
             f"Valid targets: {', '.join(alive)}\n"
-            f"ACTION must be: [exact name only]",
+            f"You MUST call the choose_target tool OR write ACTION: [exact name only]",
             session=self.session,
         )

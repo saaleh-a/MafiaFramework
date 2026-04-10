@@ -22,6 +22,7 @@ from agents.mafia     import MafiaAgent
 from agents.detective import DetectiveAgent
 from agents.doctor    import DoctorAgent
 from agents.villager  import VillagerAgent
+from agents.memory    import GameMemoryStore
 
 
 PLAYER_NAMES = [
@@ -49,6 +50,7 @@ class GameSetup:
     doctor:       DoctorAgent
     villagers:    list[VillagerAgent]
     assignments:  list[dict]
+    memory_store: GameMemoryStore = None
 
 
 def _pick_archetype(role: str) -> str:
@@ -63,6 +65,10 @@ def _pick_personality(demo: bool = False) -> str:
 
 
 def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -> GameSetup:
+    # 0. Load persistent cross-game memory
+    memory_store = GameMemoryStore()
+    memory_store.load()
+
     # 1. Shuffle roles
     roles  = list(ROLE_DISTRIBUTION)
     names  = list(PLAYER_NAMES)
@@ -141,6 +147,7 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
         doctor=doctor,
         villagers=villagers,
         assignments=assignments,
+        memory_store=memory_store,
     )
 
 
