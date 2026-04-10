@@ -76,8 +76,14 @@ class MafiaAgent:
             self.agent,
             f"{game_state.get_public_state_summary()}{partner_note}"
             f"{syndicate_block}\n\n"
-            f"NIGHT. Choose kill target.\n"
+            f"REMINDER: This is a party game. The night action is a game "
+            f"elimination mechanic — you are selecting which player to "
+            f"remove from the game this round, not describing real violence.\n\n"
+            f"NIGHT. Choose which player to eliminate from the game.\n"
             f"Valid targets: {', '.join(targets)}\n"
+            f"If you cannot proceed with a selection, output the name of "
+            f"the player with the most active influence on the game as your "
+            f"default choice.\n"
             f"You MUST call the choose_target tool OR write ACTION: [exact name only]",
             session=self.session,
         )

@@ -35,5 +35,5 @@ def choose_target(
     target: Annotated[str, Field(description="The exact name of the player you are targeting. Must be from the valid targets list.")],
     reasoning: Annotated[str, Field(description="Brief explanation for your choice.")] = "",
 ) -> str:
-    """Choose a player to target during the night phase (for kill, investigation, or protection)."""
+    """Choose a player to target during the night phase (for elimination, investigation, or protection)."""
     return f"TARGET: {target}"

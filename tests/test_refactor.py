@@ -781,5 +781,267 @@ class TestInMemoryHistoryProvider(unittest.TestCase):
         self.assertIsNotNone(provider)
 
 
+# ===========================================================================
+#  20. Discussion Phase Output Contains No Vote Format
+# ===========================================================================
+
+class TestDiscussionNoVoteFormat(unittest.TestCase):
+    """Verify the discussion rules ban 'I vote' format from discussion phase."""
+
+    def test_mafia_prompt_bans_vote_in_discussion(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        self.assertIn("STRICTLY BANNED during discussion", prompt)
+        self.assertIn("I'm voting X", prompt)
+
+    def test_detective_prompt_bans_vote_in_discussion(self):
+        from prompts.builder import build_detective_prompt
+        prompt = build_detective_prompt("Alice", "Paranoid", "TheAnalyst")
+        self.assertIn("STRICTLY BANNED during discussion", prompt)
+
+    def test_doctor_prompt_bans_vote_in_discussion(self):
+        from prompts.builder import build_doctor_prompt
+        prompt = build_doctor_prompt("Alice", "Paranoid", "TheAnalyst")
+        self.assertIn("STRICTLY BANNED during discussion", prompt)
+
+    def test_villager_prompt_bans_vote_in_discussion(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Paranoid", "TheAnalyst")
+        self.assertIn("STRICTLY BANNED during discussion", prompt)
+
+    def test_discussion_rules_require_specific_claim(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
+        self.assertIn("SPECIFIC CLAIM REQUIREMENT", prompt)
+        self.assertIn("quote or paraphrase", prompt)
+
+    def test_discussion_rules_own_read_first(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
+        self.assertIn("OWN READ FIRST", prompt)
+
+    def test_discussion_rules_speak_obliquely(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
+        self.assertIn("SPEAK OBLIQUELY", prompt)
+
+    def test_discussion_rules_no_consensus_echoing(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
+        self.assertIn("NO CONSENSUS ECHOING", prompt)
+
+
+# ===========================================================================
+#  21. Night Kill Prompt Contains No Kill/Murder Language
+# ===========================================================================
+
+class TestNightKillPromptLanguage(unittest.TestCase):
+    """Verify night kill prompts use game-mechanic framing, not violence."""
+
+    def test_mafia_goal_no_kill_language(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        # The Mafia goal should not say "eliminate Town players" with kill/murder
+        self.assertNotIn("murder", prompt.lower())
+        # Check that game context framing is present
+        self.assertIn("party game", prompt)
+        self.assertIn("GAME CONTEXT", prompt)
+
+    def test_syndicate_channel_no_kill_language(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        self.assertIn("elimination target", prompt)
+        self.assertNotIn("kill target", prompt)
+
+    def test_mafia_prompt_has_refusal_fallback(self):
+        """Mafia prompt should include fallback instruction for refusals."""
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        self.assertIn("GAME CONTEXT", prompt)
+        self.assertIn("game mechanics", prompt.lower())
+
+
+# ===========================================================================
+#  22. Contrarian Archetype Contains Resistance Requirement
+# ===========================================================================
+
+class TestContrarianResistance(unittest.TestCase):
+    """Verify the Contrarian archetype has the resistance requirement."""
+
+    def test_contrarian_has_resistance_requirement(self):
+        from prompts.archetypes import ARCHETYPES
+        contrarian = ARCHETYPES["Contrarian"]
+        modifier = contrarian["strategy_modifier"]
+        self.assertIn("RESISTANCE REQUIREMENT", modifier)
+        self.assertIn("five or more players", modifier)
+
+    def test_contrarian_requires_different_target_or_argument(self):
+        from prompts.archetypes import ARCHETYPES
+        contrarian = ARCHETYPES["Contrarian"]
+        modifier = contrarian["strategy_modifier"]
+        self.assertIn("name a DIFFERENT target", modifier)
+        self.assertIn("current consensus is wrong", modifier)
+
+    def test_contrarian_bans_pile_metacommentary(self):
+        from prompts.archetypes import ARCHETYPES
+        contrarian = ARCHETYPES["Contrarian"]
+        modifier = contrarian["strategy_modifier"]
+        self.assertIn("cannot simply join a pile", modifier)
+
+
+# ===========================================================================
+#  23. All Combination Bans Present
+# ===========================================================================
+
+class TestAllCombinationBans(unittest.TestCase):
+    """Verify all 6 required combination bans are in the exclusion table."""
+
+    def test_all_required_bans_present(self):
+        from engine.game_manager import ARCHETYPE_PERSONALITY_EXCLUSIONS
+        # Manipulative + ThePerformer
+        self.assertIn("ThePerformer", ARCHETYPE_PERSONALITY_EXCLUSIONS["Manipulative"])
+        # Passive + MythBuilder
+        self.assertIn("MythBuilder", ARCHETYPE_PERSONALITY_EXCLUSIONS["Passive"])
+        # Overconfident + TheParasite
+        self.assertIn("TheParasite", ARCHETYPE_PERSONALITY_EXCLUSIONS["Overconfident"])
+        # Passive + TheGhost
+        self.assertIn("TheGhost", ARCHETYPE_PERSONALITY_EXCLUSIONS["Passive"])
+        # Stubborn + MythBuilder
+        self.assertIn("MythBuilder", ARCHETYPE_PERSONALITY_EXCLUSIONS["Stubborn"])
+        # Diplomatic + TheConfessor
+        self.assertIn("TheConfessor", ARCHETYPE_PERSONALITY_EXCLUSIONS["Diplomatic"])
+
+
+# ===========================================================================
+#  24. Personality Definitions Contain Three Voice Markers
+# ===========================================================================
+
+class TestPersonalityVoiceMarkers(unittest.TestCase):
+    """Verify all personalities have the three concrete voice markers."""
+
+    def test_all_personalities_have_voice_markers(self):
+        from prompts.personalities import PERSONALITIES
+        for name, p in PERSONALITIES.items():
+            self.assertIn("voice_markers", p, f"{name} missing voice_markers")
+            markers = p["voice_markers"]
+            self.assertIn("sentence_length", markers, f"{name} missing sentence_length marker")
+            self.assertIn("evidence_relationship", markers, f"{name} missing evidence_relationship marker")
+            self.assertIn("deflection_style", markers, f"{name} missing deflection_style marker")
+
+    def test_voice_markers_are_nonempty(self):
+        from prompts.personalities import PERSONALITIES
+        for name, p in PERSONALITIES.items():
+            markers = p["voice_markers"]
+            self.assertTrue(len(markers["sentence_length"]) > 10, f"{name} sentence_length too short")
+            self.assertTrue(len(markers["evidence_relationship"]) > 10, f"{name} evidence_relationship too short")
+            self.assertTrue(len(markers["deflection_style"]) > 10, f"{name} deflection_style too short")
+
+    def test_voice_markers_injected_into_prompt(self):
+        """Verify the personality block actually injects voice markers."""
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheGhost")
+        self.assertIn("VOICE MARKERS", prompt)
+        self.assertIn("Sentence length:", prompt)
+        self.assertIn("Evidence style:", prompt)
+        self.assertIn("Under pressure:", prompt)
+
+
+# ===========================================================================
+#  25. Architecture Fix: Discussion History Excludes Self
+# ===========================================================================
+
+class TestDiscussionHistoryExcludesSelf(unittest.TestCase):
+    """Verify format_discussion_prompt filters out the agent's own messages."""
+
+    def test_own_messages_filtered_from_discussion(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Alice: I think Bob is suspicious",
+            "Bob: That's not fair",
+            "Alice: Let me explain",
+        ]
+        result = format_discussion_prompt(history, "Alice")
+        # Alice's messages should be filtered out
+        self.assertNotIn("Alice: I think Bob", result)
+        self.assertNotIn("Alice: Let me explain", result)
+        # Bob's message should remain
+        self.assertIn("Bob: That's not fair", result)
+
+    def test_empty_after_filtering_shows_first_speaker(self):
+        from agents.base import format_discussion_prompt
+        history = ["Alice: I spoke first"]
+        result = format_discussion_prompt(history, "Alice")
+        # After filtering Alice's message, nobody else spoke
+        self.assertIn("Nobody else has spoken yet", result)
+
+    def test_others_messages_preserved(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Something suspicious happened",
+            "Charlie: I agree with Bob",
+        ]
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("Bob: Something suspicious happened", result)
+        self.assertIn("Charlie: I agree with Bob", result)
+
+    def test_labeled_as_others_discussion(self):
+        from agents.base import format_discussion_prompt
+        history = ["Bob: Test message"]
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("others have said", result.lower())
+
+
+# ===========================================================================
+#  26. Expanded Slang Register (MLE + Gen Z + 2020s)
+# ===========================================================================
+
+class TestExpandedSlangRegister(unittest.TestCase):
+    """Verify the GENZ_REGISTER includes expanded MLE and 2020s slang."""
+
+    def test_register_has_mle_adjectives_expanded(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["peng", "buff", "hench", "leng", "moist"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing MLE adjective: {term}")
+
+    def test_register_has_mle_nouns_expanded(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["bossman", "gyaldem", "garms", "creps", "yard"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing MLE noun: {term}")
+
+    def test_register_has_mle_verbs_expanded(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["crease", "link up", "merk", "par off", "cotch"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing MLE verb: {term}")
+
+    def test_register_has_mle_interjections_expanded(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["innit", "oh my days"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing MLE interjection: {term}")
+
+    def test_register_has_mle_pronouns_expanded(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["my G", "us man", "you man"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing MLE pronoun: {term}")
+
+    def test_register_has_2020s_slang(self):
+        from prompts.archetypes import GENZ_REGISTER
+        for term in ["based", "slay", "ate", "bussin", "fire", "lit",
+                      "ratio", "locked in", "crash out", "stan",
+                      "ghost", "salty", "sigma", "bruh", "periodt",
+                      "rizz", "aura", "glaze", "bffr", "icl",
+                      "iykyk", "truth nuke", "pick-me",
+                      "understood the assignment", "skill issue",
+                      "vibe check", "it's giving", "slaps", "snatched"]:
+            self.assertIn(term, GENZ_REGISTER, f"Missing 2020s slang: {term}")
+
+    def test_register_injected_into_prompts(self):
+        """Verify the slang register appears in agent prompts."""
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheGhost")
+        self.assertIn("SLANG REGISTER", prompt)
+        self.assertIn("rizz", prompt)
+        self.assertIn("innit", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
