@@ -2,10 +2,15 @@
 
 import re
 import sys
+import logging
 
 from agent_framework import AgentSession
 from prompts.archetypes import CORPORATE_WORDS
 from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT
+from agents.rate_limiter import rate_limited_call, _is_rate_limit_error, _is_timeout_error
+from config.settings import MAFIA_ENABLE_STREAMING_FALLBACK
+
+logger = logging.getLogger(__name__)
 
 
 def format_discussion_prompt(history: list[str], agent_name: str) -> str:
@@ -170,6 +175,8 @@ async def run_agent_stream(
     agent,
     prompt: str,
     session: AgentSession | None = None,
+    *,
+    player_name: str = "unknown",
 ) -> tuple[str, str]:
     """
     Run an agent with streaming and return (reasoning, action).
@@ -189,14 +196,31 @@ async def run_agent_stream(
     Retries up to _MAX_RETRIES times if the model returns a
     content-filter refusal or a corrupted response (e.g. REASONING
     leaked into the ACTION section with no real action text).
+
+    Rate limiting: all API calls go through the global semaphore via
+    rate_limited_call(), which handles 429 backoff automatically.
     """
+
+    async def _do_stream_call() -> str:
+        """Single streaming API call — returns the concatenated text."""
+        full_text = ""
+        async for chunk in agent.run(prompt, stream=True, session=session):
+            if chunk.text:
+                full_text += chunk.text
+        return full_text
+
+    async def _do_non_stream_call() -> str:
+        """Non-streaming fallback — returns the response text."""
+        result = await agent.run(prompt, stream=False, session=session)
+        return result.text or ""
+
     corporate_retried = False
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            full_text = ""
-            async for chunk in agent.run(prompt, stream=True, session=session):
-                if chunk.text:
-                    full_text += chunk.text
+            full_text = await rate_limited_call(
+                _do_stream_call,
+                player_name=player_name,
+            )
 
             # If the response contains a refusal and we have retries left,
             # try again with the same prompt.
@@ -232,6 +256,30 @@ async def run_agent_stream(
 
             return reasoning, action
         except Exception as exc:
+            # Streaming fallback: retry as non-streaming on rate-limit
+            if (
+                MAFIA_ENABLE_STREAMING_FALLBACK
+                and (_is_rate_limit_error(exc) or _is_timeout_error(exc))
+                and attempt < _MAX_RETRIES
+            ):
+                logger.info(
+                    "[%s] Streaming failed, retrying non-streaming: %s",
+                    player_name, exc,
+                )
+                try:
+                    full_text = await rate_limited_call(
+                        _do_non_stream_call,
+                        player_name=player_name,
+                    )
+                    full_text = _strip_refusal(full_text)
+                    tool_result = _extract_tool_result(full_text)
+                    if tool_result:
+                        reasoning, _ = parse_reasoning_action(full_text)
+                        return reasoning, tool_result
+                    return parse_reasoning_action(full_text)
+                except Exception:
+                    pass  # Fall through to normal error handling
+
             _handle_api_error(exc)
             raise
 
