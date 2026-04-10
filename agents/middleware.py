@@ -10,13 +10,18 @@ CorporateSpeakMiddleware:
     After agent execution, checks the ACTION section for boardroom
     vocabulary. If too many corporate words are found, modifies the
     prompt and re-invokes the agent — all within the middleware pipeline.
+
+    Note: In streaming mode, the result is a ResponseStream that hasn't
+    been consumed yet, so the middleware skips the check. For streaming
+    calls, corporate-speak enforcement is handled inline by
+    run_agent_stream() in agents/base.py.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from agent_framework import AgentContext, agent_middleware
+from agent_framework import AgentContext, AgentResponse, Message, agent_middleware
 
 # Import the canonical CORPORATE_WORDS from archetypes to avoid duplication.
 from prompts.archetypes import CORPORATE_WORDS
@@ -47,32 +52,38 @@ async def corporate_speak_middleware(
     Runs after the agent produces a response. If the ACTION section
     contains 3+ corporate words, appends a slang hint to the messages
     and re-invokes the pipeline once.
+
+    In streaming mode the result is a ResponseStream that hasn't been
+    consumed yet, so the check is skipped here (handled by
+    run_agent_stream instead).
     """
     await call_next()
 
-    # Check the response for corporate-speak
-    response = context.response
-    if not response:
+    # Streaming: result is a ResponseStream, not AgentResponse.
+    # The text hasn't been consumed yet so we can't inspect it.
+    if context.stream:
         return
 
-    response_text = response.text or ""
+    # Non-streaming: result is an AgentResponse
+    result = context.result
+    if not isinstance(result, AgentResponse):
+        return
+
+    response_text = result.text or ""
     action_text = _extract_action(response_text)
 
     if _count_corporate(action_text) < _CORPORATE_THRESHOLD:
         return
 
     # Re-invoke with a slang enforcement hint
-    from agent_framework import Message
-
-    context.extend_messages(
-        "corporate_enforcement",
-        [Message(
+    context.messages.append(
+        Message(
             role="user",
             contents=[
                 "⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
                 "Rewrite using slang. Short words. Road logic. "
                 "You are in a pub argument, not a boardroom."
             ],
-        )],
+        ),
     )
     await call_next()
