@@ -112,7 +112,7 @@ def get_retry_stats() -> dict[str, int]:
 
 
 async def rate_limited_call(
-    coro_factory: "Callable[[], Awaitable]",
+    coro_factory: Callable[[], Awaitable],
     *,
     player_name: str = "unknown",
 ):

@@ -47,6 +47,11 @@ from config.settings  import MAFIA_MAX_CONCURRENT_CALLS
 
 logger = logging.getLogger(__name__)
 
+# Fallback self-protect threshold: when the Doctor API call fails entirely,
+# use a lower threshold than the prompt's 0.6 because a conservative
+# self-protect is safer than a random target in degraded mode.
+_FALLBACK_SELF_PROTECT_THRESHOLD = 0.3
+
 
 class MafiaGameOrchestrator:
     def __init__(
@@ -98,7 +103,9 @@ class MafiaGameOrchestrator:
         # Track vote parse failures per agent for format reinforcement
         self._vote_parse_failures: dict[str, int] = {}
 
-        # Phase-tier semaphore: limits concurrency within a single phase
+        # Phase-tier semaphore: limits concurrency within a single phase.
+        # Minimum of 2 concurrent slots ensures progress even under
+        # heavy rate limiting (1 would serialize all calls within a phase).
         phase_limit = max(2, MAFIA_MAX_CONCURRENT_CALLS - 1)
         self._phase_semaphore = asyncio.Semaphore(phase_limit)
 
@@ -226,11 +233,10 @@ class MafiaGameOrchestrator:
                 sum(own_suspicion_values) / len(own_suspicion_values)
                 if own_suspicion_values else 0.0
             )
-            # If Doctor is threatened, protect self. Note: this threshold
-            # (0.3) is intentionally lower than the prompt's 0.6 override
-            # because this path fires only when the API call failed entirely
-            # — a conservative self-protect is safer than random in that case.
-            if avg_suspicion > 0.3 and name in valid:
+            # If Doctor is threatened, protect self. This threshold is
+            # intentionally lower than the prompt's 0.6 override because
+            # this path fires only when the API call failed entirely.
+            if avg_suspicion > _FALLBACK_SELF_PROTECT_THRESHOLD and name in valid:
                 logger.warning(
                     "[%s] Protection call failed — self-protect (suspicion %.2f)",
                     name, avg_suspicion,
