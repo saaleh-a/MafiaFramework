@@ -28,6 +28,14 @@ from prompts.archetypes import CORPORATE_WORDS
 
 _CORPORATE_THRESHOLD = 3
 
+# The slang enforcement hint, shared with run_agent_stream (agents/base.py)
+# for the streaming fallback.
+CORPORATE_ENFORCEMENT_HINT = (
+    "⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
+    "Rewrite using slang. Short words. Road logic. "
+    "You are in a pub argument, not a boardroom."
+)
+
 
 def _count_corporate(text: str) -> int:
     text_lower = text.lower()
@@ -79,11 +87,7 @@ async def corporate_speak_middleware(
     context.messages.append(
         Message(
             role="user",
-            contents=[
-                "⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
-                "Rewrite using slang. Short words. Road logic. "
-                "You are in a pub argument, not a boardroom."
-            ],
+            contents=[CORPORATE_ENFORCEMENT_HINT],
         ),
     )
     await call_next()

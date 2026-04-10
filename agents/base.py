@@ -5,6 +5,7 @@ import sys
 
 from agent_framework import AgentSession
 from prompts.archetypes import CORPORATE_WORDS
+from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT
 
 
 def format_discussion_prompt(history: list[str], agent_name: str) -> str:
@@ -80,7 +81,6 @@ _REFUSAL_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 _MAX_RETRIES = 2
-_CORPORATE_THRESHOLD = 3
 
 
 def _contains_refusal(text: str) -> bool:
@@ -216,12 +216,7 @@ async def run_agent_stream(
                 and _count_corporate(action) >= _CORPORATE_THRESHOLD
             ):
                 corporate_retried = True
-                prompt = (
-                    "⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
-                    "Rewrite using slang. Short words. Road logic. "
-                    "You are in a pub argument, not a boardroom.\n\n"
-                    + prompt
-                )
+                prompt = CORPORATE_ENFORCEMENT_HINT + "\n\n" + prompt
                 continue
 
             return reasoning, action
