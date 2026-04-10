@@ -32,6 +32,19 @@ from dataclasses import dataclass, field
 # suspicion exceeds this, they should reveal their identity to survive.
 SELF_PRESERVATION_THRESHOLD = 0.45
 
+# Graduated Iroh Protocol thresholds
+IROH_SOFT_HINT_THRESHOLD = 0.35     # Soft reveal hint
+IROH_HARD_CLAIM_THRESHOLD = 0.45    # Hard role claim with conditional
+IROH_FULL_REVEAL_THRESHOLD = 0.55   # Immediate full reveal
+
+# Red-check adjustment: if Detective holds confirmed Mafia finding,
+# lower all thresholds by this amount (information > survival)
+IROH_RED_CHECK_ADJUSTMENT = 0.10
+
+# Archetype modulation thresholds for belief updates
+STRONG_EVIDENCE_THRESHOLD = 0.15    # Overconfident/Stubborn: require strong evidence
+WEAK_EVIDENCE_THRESHOLD = 0.05      # Volatile/Reactive: update on any signal
+
 
 @dataclass
 class SuspicionState:
@@ -128,6 +141,45 @@ class SuspicionState:
         suspicion across all agents who track us exceeds the threshold,
         we should reveal.
         """
+        avg = self._get_avg_suspicion(own_name, all_beliefs)
+        if avg is None:
+            return False
+        return avg >= self.self_preservation_threshold
+
+    def get_iroh_level(
+        self, own_name: str, all_beliefs: dict[str, "SuspicionState"],
+        *, has_red_check: bool = False,
+    ) -> str | None:
+        """
+        Graduated Iroh Protocol: return the appropriate reveal level.
+
+        Returns one of:
+          - "soft_hint"   (threshold 0.35): hint at having information
+          - "hard_claim"  (threshold 0.45): conditional role claim
+          - "full_reveal" (threshold 0.55): immediate full reveal
+          - None: no reveal needed
+
+        If has_red_check is True, all thresholds are lowered by 0.10
+        because information preservation outweighs survival risk.
+        """
+        avg = self._get_avg_suspicion(own_name, all_beliefs)
+        if avg is None:
+            return None
+
+        adjustment = IROH_RED_CHECK_ADJUSTMENT if has_red_check else 0.0
+
+        if avg >= IROH_FULL_REVEAL_THRESHOLD - adjustment:
+            return "full_reveal"
+        if avg >= IROH_HARD_CLAIM_THRESHOLD - adjustment:
+            return "hard_claim"
+        if avg >= IROH_SOFT_HINT_THRESHOLD - adjustment:
+            return "soft_hint"
+        return None
+
+    def _get_avg_suspicion(
+        self, own_name: str, all_beliefs: dict[str, "SuspicionState"],
+    ) -> float | None:
+        """Calculate average suspicion of *own_name* across all other agents."""
         suspicion_values: list[float] = []
         for agent_name, belief in all_beliefs.items():
             if agent_name == own_name:
@@ -135,9 +187,8 @@ class SuspicionState:
             if own_name in belief.probabilities:
                 suspicion_values.append(belief.probabilities[own_name])
         if not suspicion_values:
-            return False
-        avg_suspicion = sum(suspicion_values) / len(suspicion_values)
-        return avg_suspicion >= self.self_preservation_threshold
+            return None
+        return sum(suspicion_values) / len(suspicion_values)
 
 
 # ------------------------------------------------------------------ #
@@ -187,22 +238,55 @@ def build_belief_prompt_injection(
         "SUSPICION CHECK (System 2 — slow down and think):",
         belief.summary(),
         "",
-        "You MAY include one or two BELIEF_UPDATE tags in your REASONING to anchor "
-        "a specific inference — but do NOT audit every living player every turn. "
-        "A complete probability table is not reasoning; it is boilerplate that "
-        "drowns out your actual thinking.",
-        "Format when used: BELIEF_UPDATE: PlayerName=0.XX because [specific evidence].",
-        "If you have no new evidence for a player, do not mention them.",
+        "You MAY include one or more BELIEF_UPDATE tags in your REASONING to anchor "
+        "specific inferences. You SHOULD include at least one per phase, even if your "
+        "beliefs have not changed — tag it as a reaffirmation: "
+        "'BELIEF_UPDATE: PlayerName=0.XX because [reaffirm — no new evidence changes this read].'",
+        "",
+        "Do NOT audit every living player every turn — focus on the 1-3 players whose "
+        "suspicion SHOULD move based on what just happened.",
+        "Format: BELIEF_UPDATE: PlayerName=0.XX because [specific evidence].",
         "Do NOT invent evidence. Only cite things visible in the discussion history.",
         "",
-        "Your REASONING block should reflect the texture of your archetype. "
+        "TRIGGER CONDITIONS (you SHOULD update when any of these occur):",
+        "  - A player was just eliminated and their role revealed",
+        "  - Someone directly accused you",
+        "  - Your Mafia partner was mentioned (Mafia only)",
+        "  - You completed an investigation (Detective only)",
+        "",
+    ]
+
+    # Archetype-specific belief update modulation
+    if archetype in ("Overconfident", "Stubborn"):
+        parts.append(
+            f"ARCHETYPE MODULATION: You are {archetype}. You only update beliefs "
+            f"on STRONG evidence (threshold: beliefs must shift by at least "
+            f"{STRONG_EVIDENCE_THRESHOLD} to warrant "
+            f"a change). Small signals do not move you. Explain why evidence is strong enough "
+            f"to shift your read, or explicitly state it is not."
+        )
+    elif archetype in ("Volatile", "Reactive"):
+        parts.append(
+            f"ARCHETYPE MODULATION: You are {archetype}. You update on ANY new information "
+            f"(threshold: {WEAK_EVIDENCE_THRESHOLD} change is sufficient). New information "
+            f"feels urgent. Show why the latest development reshapes your read."
+        )
+    elif archetype in ("Analytical", "Methodical"):
+        parts.append(
+            "ARCHETYPE MODULATION: You are " + archetype + ". Every BELIEF_UPDATE must include "
+            "an explicit explanation chain: what evidence you saw, what inference you drew, "
+            "and how it changes the probability. No update without a complete reasoning chain."
+        )
+
+    parts.append(
+        "\nYour REASONING block should reflect the texture of your archetype. "
         "If you are Paranoid, your reasoning should convey anxiety and threat-inflation. "
         "If you are Volatile, show why new information feels more urgent than old. "
         "If you are Analytical, write structured inference with explicit evidence chains. "
         "The archetype is not just a conclusion modifier — it is a reasoning style. "
         "Write in that style. Do not produce the same neutral probability audit "
-        "regardless of who you are.",
-    ]
+        "regardless of who you are."
+    )
 
     if archetype == "Overconfident":
         top = belief.get_top_suspect()

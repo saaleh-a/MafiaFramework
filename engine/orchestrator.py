@@ -8,6 +8,7 @@ Integrates:
   - MAF ContextProviders: belief state + memory injected via session.state
   - MAF Agent middleware: corporate-speak enforcement via pipeline
   - MAF @tool: structured vote/target actions via tool-calling
+  - Rate limiting: phase-tier semaphore + graceful degradation fallbacks
 
 v4 changes (from v3):
   - Replaced manual belief_prefix string concatenation with MAF ContextProviders
@@ -16,6 +17,8 @@ v4 changes (from v3):
   - Corporate-speak enforcement moved from base.py retry to agent middleware
 """
 
+import asyncio
+import logging
 import random
 import re
 import sys
@@ -40,6 +43,14 @@ from agents.belief_state import (
 from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
 from agents.summary   import SummaryAgent
 from agents.memory    import GameMemoryStore
+from config.settings  import MAFIA_MAX_CONCURRENT_CALLS
+
+logger = logging.getLogger(__name__)
+
+# Fallback self-protect threshold: when the Doctor API call fails entirely,
+# use a lower threshold than the prompt's 0.6 because a conservative
+# self-protect is safer than a random target in degraded mode.
+_FALLBACK_SELF_PROTECT_THRESHOLD = 0.3
 
 
 class MafiaGameOrchestrator:
@@ -89,6 +100,15 @@ class MafiaGameOrchestrator:
         # Temporal consistency: "DeepSeek" slip detection
         self._temporal_checker = TemporalConsistencyChecker()
 
+        # Track vote parse failures per agent for format reinforcement
+        self._vote_parse_failures: dict[str, int] = {}
+
+        # Phase-tier semaphore: limits concurrency within a single phase.
+        # Minimum of 2 concurrent slots ensures progress even under
+        # heavy rate limiting (1 would serialize all calls within a phase).
+        phase_limit = max(2, MAFIA_MAX_CONCURRENT_CALLS - 1)
+        self._phase_semaphore = asyncio.Semaphore(phase_limit)
+
         # Populate MAF ContextProvider state on each agent's session.
         # This is how the BeliefStateProvider and CrossGameMemoryProvider
         # get their data — via session.state, the MAF-idiomatic way.
@@ -116,11 +136,117 @@ class MafiaGameOrchestrator:
             belief_state["role"] = agent.role
             belief_state["name"] = name
 
+            # Pass detective findings for Iroh Protocol red-check detection
+            if agent.role == "Detective" and hasattr(agent, "findings"):
+                belief_state["findings"] = agent.findings
+            else:
+                belief_state["findings"] = {}
+
+            # Pass vote parse failure count for format reinforcement
+            belief_state["vote_parse_failures"] = self._vote_parse_failures.get(name, 0)
+
             # CrossGameMemoryProvider state
             session.state.setdefault(CrossGameMemoryProvider.DEFAULT_SOURCE_ID, {})
             mem_state = session.state[CrossGameMemoryProvider.DEFAULT_SOURCE_ID]
             mem_state["store"] = self._memory
             mem_state["role"] = agent.role
+
+    # ------------------------------------------------------------------ #
+    #  Graceful degradation fallbacks                                      #
+    # ------------------------------------------------------------------ #
+
+    def _fallback_discussion(self, name: str) -> tuple[str, str]:
+        """Fallback when discussion API call fails: player passes."""
+        logger.warning("[%s] Discussion call failed — player passes turn", name)
+        return ("", "I'll listen for now.")
+
+    def _fallback_vote(self, name: str, alive: list[str]) -> tuple[str, str]:
+        """Fallback when vote API call fails: vote using belief state."""
+        belief = self._beliefs.get(name)
+        eligible = [p for p in alive if p != name]
+        if belief and eligible:
+            # Vote for highest-suspicion player
+            scored = [(p, belief.probabilities.get(p, 0.0)) for p in eligible]
+            scored.sort(key=lambda x: -x[1])
+            target = scored[0][0]
+            logger.warning(
+                "[%s] Vote call failed — fallback to highest suspicion: %s",
+                name, target,
+            )
+            return ("", f"VOTE: {target}")
+        if eligible:
+            target = random.choice(eligible)
+            logger.warning(
+                "[%s] Vote call failed — random fallback: %s",
+                name, target,
+            )
+            return ("", f"VOTE: {target}")
+        return ("", "")
+
+    def _fallback_night_kill(self, name: str, targets: list[str]) -> tuple[str, str]:
+        """Fallback when Mafia night kill API call fails: target highest-threat."""
+        belief = self._beliefs.get(name)
+        if belief and targets:
+            scored = [(p, belief.probabilities.get(p, 0.0)) for p in targets]
+            # Mafia targets the player LEAST suspected (highest threat to Mafia)
+            # because least-suspected Town players are likely power roles.
+            scored.sort(key=lambda x: x[1])
+            target = scored[0][0]
+            logger.warning(
+                "[%s] Night kill call failed — fallback to lowest-suspicion Town: %s",
+                name, target,
+            )
+            return ("", target)
+        if targets:
+            target = random.choice(targets)
+            logger.warning("[%s] Night kill call failed — random: %s", name, target)
+            return ("", target)
+        return ("", "")
+
+    def _fallback_investigation(self, name: str, eligible: list[str]) -> tuple[str, str]:
+        """Fallback when Detective investigation API call fails: most suspicious."""
+        belief = self._beliefs.get(name)
+        if belief and eligible:
+            scored = [(p, belief.probabilities.get(p, 0.0)) for p in eligible]
+            scored.sort(key=lambda x: -x[1])
+            target = scored[0][0]
+            logger.warning(
+                "[%s] Investigation call failed — fallback to most suspicious: %s",
+                name, target,
+            )
+            return ("", target)
+        if eligible:
+            target = random.choice(eligible)
+            logger.warning("[%s] Investigation call failed — random: %s", name, target)
+            return ("", target)
+        return ("", "")
+
+    def _fallback_protection(self, name: str, valid: list[str]) -> tuple[str, str]:
+        """Fallback when Doctor protection API call fails: protect self if threatened."""
+        belief = self._beliefs.get(name)
+        if belief and name in [p for p in self.gs.get_alive_players()]:
+            own_suspicion_values = []
+            for _, b in self._beliefs.items():
+                if name in b.probabilities:
+                    own_suspicion_values.append(b.probabilities[name])
+            avg_suspicion = (
+                sum(own_suspicion_values) / len(own_suspicion_values)
+                if own_suspicion_values else 0.0
+            )
+            # If Doctor is threatened, protect self. This threshold is
+            # intentionally lower than the prompt's 0.6 override because
+            # this path fires only when the API call failed entirely.
+            if avg_suspicion > _FALLBACK_SELF_PROTECT_THRESHOLD and name in valid:
+                logger.warning(
+                    "[%s] Protection call failed — self-protect (suspicion %.2f)",
+                    name, avg_suspicion,
+                )
+                return ("", name)
+        if valid:
+            target = random.choice(valid)
+            logger.warning("[%s] Protection call failed — random: %s", name, target)
+            return ("", target)
+        return ("", "")
 
     async def run_game(self) -> str:
         print_phase_header("GAME START", 0)
@@ -187,9 +313,18 @@ class MafiaGameOrchestrator:
                 # from session.state — this is the MAF-idiomatic approach.
                 self._sync_provider_state()
 
-                reasoning, action = await agent.day_discussion(
-                    self.gs, discussion_history,
+                # Compress history for late-game context management
+                compressed = self._summary.compress_discussion_history(
+                    discussion_history, self.gs,
                 )
+
+                try:
+                    reasoning, action = await agent.day_discussion(
+                        self.gs, compressed,
+                    )
+                except Exception as exc:
+                    logger.error("[%s] Discussion failed: %s", name, exc)
+                    reasoning, action = self._fallback_discussion(name)
 
                 # Parse and apply belief updates from reasoning
                 belief = self._beliefs.get(name)
@@ -298,7 +433,11 @@ class MafiaGameOrchestrator:
             if name not in self._agents:
                 continue
             agent = self._agents[name]
-            reasoning, action = await agent.cast_vote(self.gs, discussion_history)
+            try:
+                reasoning, action = await agent.cast_vote(self.gs, discussion_history)
+            except Exception as exc:
+                logger.error("[%s] Vote call failed: %s", name, exc)
+                reasoning, action = self._fallback_vote(name, alive)
 
             # Parse belief updates from vote reasoning too
             belief = self._beliefs.get(name)
@@ -312,10 +451,27 @@ class MafiaGameOrchestrator:
                         personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
             if vote_target is None:
-                # Fallback: assign a random valid target when vote parsing fails
-                # (e.g. self-vote, refusal, or unparseable response)
+                # Track parse failure for format reinforcement next round
+                self._vote_parse_failures[name] = (
+                    self._vote_parse_failures.get(name, 0) + 1
+                )
+                # Semantic extraction: use belief state to infer vote intent
+                belief = self._beliefs.get(name)
                 eligible = [p for p in alive if p != name]
-                if eligible:
+                if belief and eligible:
+                    scored = [
+                        (p, belief.probabilities.get(p, 0.0)) for p in eligible
+                    ]
+                    scored.sort(key=lambda x: -x[1])
+                    vote_target = scored[0][0]
+                    raw_preview = action[:200].replace("\n", " ")
+                    print(
+                        f"  [!] {name}'s vote was unparseable; "
+                        f"belief-state fallback -> {vote_target}\n"
+                        f"      Raw action text: \"{raw_preview}\"",
+                        file=sys.stderr,
+                    )
+                elif eligible:
                     vote_target = random.choice(eligible)
                     # Include raw text so failures are diagnosable
                     raw_preview = action[:200].replace("\n", " ")
@@ -375,9 +531,13 @@ class MafiaGameOrchestrator:
                     partner_reasoning = other.last_night_reasoning
                     break
 
-            reasoning, action = await mafia_agent.choose_night_kill(
-                self.gs, partner_hint, partner_reasoning,
-            )
+            try:
+                reasoning, action = await mafia_agent.choose_night_kill(
+                    self.gs, partner_hint, partner_reasoning,
+                )
+            except Exception as exc:
+                logger.error("[%s] Night kill call failed: %s", mafia_agent.name, exc)
+                reasoning, action = self._fallback_night_kill(mafia_agent.name, targets)
             self.gs.log(mafia_agent.name, "Mafia", mafia_agent.archetype, reasoning, action)
             self._print(
                 mafia_agent.name, "Mafia", mafia_agent.archetype,
@@ -397,9 +557,13 @@ class MafiaGameOrchestrator:
             self.gs.night_kill_target = town[0] if town else None
 
         if self.detective.name in self.gs.get_alive_players():
-            reasoning, action = await self.detective.choose_investigation_target(self.gs)
             alive = self.gs.get_alive_players()
             eligible = [p for p in alive if p != self.detective.name]
+            try:
+                reasoning, action = await self.detective.choose_investigation_target(self.gs)
+            except Exception as exc:
+                logger.error("[%s] Investigation call failed: %s", self.detective.name, exc)
+                reasoning, action = self._fallback_investigation(self.detective.name, eligible)
             target = self._parse_target(action, eligible)
             if not target and eligible:
                 target = random.choice(eligible)
@@ -421,8 +585,13 @@ class MafiaGameOrchestrator:
                 )
 
         if self.doctor.name in self.gs.get_alive_players():
-            reasoning, action = await self.doctor.choose_protection_target(self.gs)
             alive = self.gs.get_alive_players()
+            valid = [p for p in alive if p != self.gs.last_protected]
+            try:
+                reasoning, action = await self.doctor.choose_protection_target(self.gs)
+            except Exception as exc:
+                logger.error("[%s] Protection call failed: %s", self.doctor.name, exc)
+                reasoning, action = self._fallback_protection(self.doctor.name, valid)
             protect_target = self._parse_target(action, alive)
             if not protect_target:
                 eligible = [p for p in alive if p != self.gs.last_protected]

@@ -196,3 +196,75 @@ class SummaryAgent:
             winner = game_state.check_win_condition()
             return f"Game over. {winner or 'Unknown'} wins."
         return "Waiting for the next phase."
+
+    def compress_discussion_history(
+        self,
+        full_history: list[str],
+        game_state: GameState,
+    ) -> list[str]:
+        """
+        Progressive history compression to prevent context overflow.
+
+        Rounds 1-2: Full conversation history
+        Rounds 3-4: Summarized key accusations + full current round
+        Round 5+:   Only elimination reveals, role flips, and current round
+
+        This forces agents to rely on belief state rather than transcript
+        search for older information.
+        """
+        current_round = game_state.round_number
+
+        if current_round <= 2:
+            return full_history
+
+        if not full_history:
+            return full_history
+
+        # Separate current round entries from older ones.
+        # We assume discussion_history is built sequentially; entries from
+        # the current round are the most recent ones.  We use a heuristic:
+        # keep the last N entries as "current round" based on alive count.
+        alive_count = len(game_state.get_alive_players())
+        # Each round has ~alive_count discussion entries per sub-round, 2 sub-rounds
+        current_round_size = min(alive_count * 2, len(full_history))
+        older = full_history[:-current_round_size] if current_round_size < len(full_history) else []
+        current = full_history[-current_round_size:]
+
+        if current_round <= 4:
+            # Rounds 3-4: summarize older entries, keep current
+            if older:
+                summary = self._summarize_key_accusations(older)
+                return [f"[EARLIER SUMMARY]: {summary}"] + current
+            return current
+
+        # Round 5+: only elimination/role reveals + current round
+        critical = []
+        for entry in older:
+            entry_lower = entry.lower()
+            if any(kw in entry_lower for kw in (
+                "eliminated", "was found dead", "role:",
+                "[system]", "flipped", "detective", "i am the",
+                "mafia", "innocent",
+            )):
+                critical.append(entry)
+        if critical:
+            return [f"[CRITICAL HISTORY]:"] + critical + [""] + current
+        return current
+
+    @staticmethod
+    def _summarize_key_accusations(entries: list[str]) -> str:
+        """Extract key accusations from older discussion entries."""
+        accusations: list[str] = []
+        accusation_words = {"suspect", "suspicious", "vote", "accuse", "mafia", "guilty"}
+        for entry in entries:
+            entry_lower = entry.lower()
+            if any(w in entry_lower for w in accusation_words):
+                # Extract speaker and truncated content
+                if ":" in entry:
+                    speaker, content = entry.split(":", 1)
+                    truncated = content.strip()[:80]
+                    accusations.append(f"{speaker.strip()}: {truncated}")
+        if not accusations:
+            return "No significant accusations in earlier rounds."
+        # Keep at most 8 key accusations
+        return " | ".join(accusations[-8:])
