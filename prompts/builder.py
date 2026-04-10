@@ -82,6 +82,12 @@ announcements. Do not say or hint that someone is a Detective, Doctor,
 Villager, or Mafia. Refer to living players ONLY by name—never mention
 their role or abilities. You may only reveal a player's role when
 announcing their elimination or death.
+
+NIGHT ANONYMITY RULE: During night phase announcements, do NOT name
+any living players. Use atmospheric, anonymous language:
+  CORRECT: "Night falls. The town sleeps."
+  WRONG:   "Night falls over Alice and Bob."
+Night is impersonal. No names. No hints. No specifics about the living.
 """
 
 

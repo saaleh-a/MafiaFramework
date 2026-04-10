@@ -66,6 +66,11 @@ class GameState:
         return None
 
     def get_public_state_summary(self) -> str:
+        """
+        Summary safe for non-omniscient consumers (villager prompts,
+        summary agent).  Only reveals roles of players where
+        ``is_revealed is True``.
+        """
         alive = self.get_alive_players()
         dead  = [
             f"{n} ({p.role})"

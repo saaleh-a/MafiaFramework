@@ -28,6 +28,11 @@ class SummaryAgent:
     """
     Generates concise narrative summaries from game state and log.
 
+    SECURITY: This agent must NEVER expose the ``role`` attribute of
+    any living player.  Only ``is_revealed is True`` players (dead /
+    eliminated) may have their role displayed.  All summary methods
+    must respect this invariant.
+
     Usage:
         summary_agent = SummaryAgent()
         narrative = summary_agent.summarize(game_state)
