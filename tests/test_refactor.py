@@ -466,23 +466,24 @@ class TestRecencyWeighting(unittest.TestCase):
         # Bob has 5 * 0.1 = 0.5 from 2 rounds ago
         self.assertIn("Charlie", result)
 
-    def test_previous_round_half_weight(self):
-        """Mentions from the previous round carry 0.5 weight."""
+    def test_previous_round_reduced_weight(self):
+        """Mentions from the previous round carry 0.3 weight."""
         from agents.summary import SummaryAgent
         sa = SummaryAgent()
 
         entries = [
-            # Round 2 (previous): Bob mentioned 3 times
+            # Round 2 (previous): Bob mentioned 4 times
             self._make_entry("Alice", "I suspect Bob is mafia", 2),
             self._make_entry("Charlie", "I vote Bob guilty", 2),
             self._make_entry("Diana", "Bob is suspicious", 2),
+            self._make_entry("Eve", "I accuse Bob", 2),
             # Round 3 (current): Charlie mentioned 1 time
-            self._make_entry("Eve", "I suspect Charlie is mafia", 3),
+            self._make_entry("Frank", "I suspect Charlie is mafia", 3),
         ]
-        alive = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+        alive = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank"]
 
         result = sa._get_current_target(entries, alive, current_round=3)
-        # Bob: 3 * 0.5 = 1.5, Charlie: 1 * 1.0 = 1.0
+        # Bob: 4 * 0.3 = 1.2, Charlie: 1 * 1.0 = 1.0
         self.assertIn("Bob", result)
 
     def test_no_entries_returns_none(self):
@@ -536,6 +537,248 @@ class TestBeliefInstructionUpdate(unittest.TestCase):
         text = build_belief_prompt_injection(belief, "Analytical")
         self.assertIn("archetype", text.lower())
         self.assertIn("reasoning style", text.lower())
+
+
+# ===========================================================================
+#  11. Mafia Partner Confusion Fix (Q3 excludes partner)
+# ===========================================================================
+
+class TestMafiaPartnerConfusionFix(unittest.TestCase):
+    """Verify Q3 of the Mafia threat check explicitly excludes the partner."""
+
+    def test_q3_excludes_partner_by_name(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        # Q3 should explicitly tell the agent to exclude Bob
+        self.assertIn("Exclude Bob", prompt)
+        self.assertIn("TOWN PLAYERS", prompt.upper())
+
+    def test_q3_does_not_name_partner_as_threat(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Eve", "Frank", "Analytical", "TheMartyr")
+        # Find the Q3 line and verify it excludes Frank
+        self.assertIn("Exclude Frank", prompt)
+        self.assertIn("Do NOT name Frank here", prompt)
+
+
+# ===========================================================================
+#  12. Doctor Heuristic — Deductive Behaviour Protection
+# ===========================================================================
+
+class TestDoctorHeuristic(unittest.TestCase):
+    """Verify the Doctor prompt uses deductive behaviour, not activity."""
+
+    def test_doctor_prompt_has_protection_signals(self):
+        from prompts.builder import build_doctor_prompt
+        prompt = build_doctor_prompt("Grace", "Analytical", "TheAnalyst")
+        self.assertIn("PROTECTION SIGNALS", prompt)
+        self.assertIn("predictions", prompt.lower())
+
+    def test_doctor_prompt_warns_against_loud_players(self):
+        from prompts.builder import build_doctor_prompt
+        prompt = build_doctor_prompt("Grace", "Analytical", "TheAnalyst")
+        self.assertIn("DANGER SIGNALS", prompt)
+        self.assertIn("LOUDEST VOICE", prompt)
+
+    def test_doctor_prompt_does_not_protect_social_engine(self):
+        from prompts.builder import build_doctor_prompt
+        prompt = build_doctor_prompt("Grace", "Passive", "TheMartyr")
+        # The old "SOCIAL ENGINE" language should be replaced
+        self.assertNotIn("SOCIAL ENGINE", prompt)
+        # New: warns about Mafia behaviour
+        self.assertIn("Mafia behaviours", prompt)
+
+
+# ===========================================================================
+#  13. Recency Weighting — Stronger Decay
+# ===========================================================================
+
+class TestStrongerRecencyDecay(unittest.TestCase):
+    """Verify that 2+ round old mentions barely register."""
+
+    def _make_entry(self, agent_name: str, action: str, round_number: int):
+        return LogEntry(
+            phase=GamePhase.DAY_DISCUSSION,
+            round_number=round_number,
+            agent_name=agent_name,
+            role="Villager",
+            archetype="Methodical",
+            reasoning=None,
+            action=action,
+        )
+
+    def test_two_round_old_mentions_minimal(self):
+        """Even 10 mentions from 2 rounds ago shouldn't beat 1 current mention."""
+        from agents.summary import SummaryAgent
+        sa = SummaryAgent()
+
+        entries = [
+            # Round 1: Bob mentioned 10 times
+            self._make_entry("Alice", "I suspect Bob is mafia", 1),
+            self._make_entry("Charlie", "I vote Bob guilty", 1),
+            self._make_entry("Diana", "Bob is suspicious", 1),
+            self._make_entry("Eve", "I accuse Bob", 1),
+            self._make_entry("Frank", "I suspect Bob", 1),
+            self._make_entry("Grace", "Bob is mafia I vote Bob", 1),
+            self._make_entry("Hank", "I suspect Bob is guilty", 1),
+            self._make_entry("Ivy", "I accuse Bob", 1),
+            self._make_entry("Jack", "Bob is suspicious", 1),
+            self._make_entry("Kate", "I suspect Bob", 1),
+            # Round 3 (current): Charlie mentioned 1 time
+            self._make_entry("Alice", "I suspect Charlie is mafia", 3),
+        ]
+        alive = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank",
+                 "Grace", "Hank", "Ivy", "Jack", "Kate"]
+
+        result = sa._get_current_target(entries, alive, current_round=3)
+        # Bob: 10 * 0.05 = 0.5, Charlie: 1 * 1.0 = 1.0
+        self.assertIn("Charlie", result)
+
+
+# ===========================================================================
+#  14. Middleware Classes Exist and Are Registered
+# ===========================================================================
+
+class TestMiddlewareRegistration(unittest.TestCase):
+    """Verify the new middleware classes can be imported and instantiated."""
+
+    def test_reasoning_action_middleware_exists(self):
+        from agents.middleware import ReasoningActionMiddleware
+        mw = ReasoningActionMiddleware()
+        self.assertIsNotNone(mw)
+
+    def test_belief_update_middleware_exists(self):
+        from agents.middleware import BeliefUpdateMiddleware
+        mw = BeliefUpdateMiddleware()
+        self.assertIsNotNone(mw)
+
+    def test_middleware_is_agent_middleware_subclass(self):
+        from agents.middleware import ReasoningActionMiddleware, BeliefUpdateMiddleware
+        from agent_framework import AgentMiddleware
+        self.assertTrue(issubclass(ReasoningActionMiddleware, AgentMiddleware))
+        self.assertTrue(issubclass(BeliefUpdateMiddleware, AgentMiddleware))
+
+
+# ===========================================================================
+#  15. Consensus Personality Cap
+# ===========================================================================
+
+class TestConsensusPersonalityCap(unittest.TestCase):
+    """Verify consensus-following personalities are capped at 1 per game."""
+
+    def test_consensus_personality_cap_at_one(self):
+        """TheParasite can only appear once per game."""
+        counts: dict[str, int] = {"TheParasite": 1}
+        # Should not be able to get TheParasite again
+        for _ in range(200):
+            p = _pick_personality_constrained("Villager", dict(counts), demo=False)
+            self.assertNotEqual(p, "TheParasite")
+
+    def test_consensus_cap_theperformer(self):
+        """ThePerformer can only appear once per game."""
+        counts: dict[str, int] = {"ThePerformer": 1}
+        for _ in range(200):
+            p = _pick_personality_constrained("Villager", dict(counts), demo=False)
+            self.assertNotEqual(p, "ThePerformer")
+
+    def test_consensus_cap_mythbuilder(self):
+        """MythBuilder can only appear once per game."""
+        counts: dict[str, int] = {"MythBuilder": 1}
+        for _ in range(200):
+            p = _pick_personality_constrained("Villager", dict(counts), demo=False)
+            self.assertNotEqual(p, "MythBuilder")
+
+    def test_consensus_cap_theconfessor(self):
+        """TheConfessor can only appear once per game."""
+        counts: dict[str, int] = {"TheConfessor": 1}
+        for _ in range(200):
+            p = _pick_personality_constrained("Villager", dict(counts), demo=False)
+            self.assertNotEqual(p, "TheConfessor")
+
+    def test_non_consensus_personality_still_at_two(self):
+        """Non-consensus personalities like TheGhost can appear twice."""
+        counts: dict[str, int] = {"TheGhost": 1}
+        seen_ghost = False
+        for _ in range(500):
+            p = _pick_personality_constrained("Villager", dict(counts), demo=False)
+            if p == "TheGhost":
+                seen_ghost = True
+                break
+        self.assertTrue(seen_ghost, "TheGhost should still be assignable at count=1")
+
+
+# ===========================================================================
+#  16. Manipulative + ThePerformer Ban
+# ===========================================================================
+
+class TestManipulativePerformerBan(unittest.TestCase):
+    """Verify that Manipulative+ThePerformer is banned."""
+
+    def test_manipulative_cannot_get_theperformer(self):
+        """Manipulative+ThePerformer produced self-voting behaviour."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Manipulative",
+            )
+            self.assertNotEqual(p, "ThePerformer")
+
+
+# ===========================================================================
+#  17. Lone Divergent Vote Instruction in Prompts
+# ===========================================================================
+
+class TestLoneDivergentVoteInstruction(unittest.TestCase):
+    """Verify the lone divergent vote instruction exists in prompts."""
+
+    def test_villager_prompt_has_lone_divergent_vote(self):
+        from prompts.builder import build_villager_prompt
+        prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
+        self.assertIn("LONE DIVERGENT VOTES", prompt)
+        self.assertIn("seven or more others", prompt)
+
+    def test_detective_prompt_has_lone_divergent_vote(self):
+        from prompts.builder import build_detective_prompt
+        prompt = build_detective_prompt("Bob", "Analytical", "TheAnalyst")
+        self.assertIn("LONE DIVERGENT VOTES", prompt)
+        self.assertIn("seven or more others", prompt)
+
+
+# ===========================================================================
+#  18. Independent Reasoning Archetype Floor
+# ===========================================================================
+
+class TestIndependentArchetypeFloor(unittest.TestCase):
+    """Verify the independent reasoning archetype constants are defined."""
+
+    def test_independent_archetypes_defined(self):
+        from engine.game_manager import INDEPENDENT_ARCHETYPES, _MIN_INDEPENDENT_ARCHETYPES
+        self.assertIn("Contrarian", INDEPENDENT_ARCHETYPES)
+        self.assertIn("Analytical", INDEPENDENT_ARCHETYPES)
+        self.assertIn("Impulsive", INDEPENDENT_ARCHETYPES)
+        self.assertIn("Stubborn", INDEPENDENT_ARCHETYPES)
+        self.assertEqual(_MIN_INDEPENDENT_ARCHETYPES, 2)
+
+    def test_consensus_personalities_defined(self):
+        from engine.game_manager import CONSENSUS_PERSONALITIES, _CONSENSUS_PERSONALITY_CAP
+        self.assertIn("TheParasite", CONSENSUS_PERSONALITIES)
+        self.assertIn("TheConfessor", CONSENSUS_PERSONALITIES)
+        self.assertIn("ThePerformer", CONSENSUS_PERSONALITIES)
+        self.assertIn("MythBuilder", CONSENSUS_PERSONALITIES)
+        self.assertEqual(_CONSENSUS_PERSONALITY_CAP, 1)
+
+
+# ===========================================================================
+#  19. InMemoryHistoryProvider in Agent Constructors
+# ===========================================================================
+
+class TestInMemoryHistoryProvider(unittest.TestCase):
+    """Verify InMemoryHistoryProvider is importable and used."""
+
+    def test_inmemory_history_provider_importable(self):
+        from agent_framework import InMemoryHistoryProvider
+        provider = InMemoryHistoryProvider("history", load_messages=True)
+        self.assertIsNotNone(provider)
 
 
 if __name__ == "__main__":

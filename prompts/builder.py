@@ -259,6 +259,22 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
         SUN_TZU,
         STRATEGIC_GLOSSARY,
         INCENTIVE_REASONING,
+        # Vote Pattern Analysis — Detectives should track vote patterns as evidence
+        (
+            "VOTE PATTERN ANALYSIS:\n"
+            "Your investigations tell you alignment. Vote patterns tell you "
+            "coordination. Use both.\n"
+            "  1. LONE DIVERGENT VOTES: When one player votes a meaningfully "
+            "different target from seven or more others with no stated reason, "
+            "that is one of the strongest Mafia tells in the game. It often "
+            "means the player voted for who they wanted dead (their night kill "
+            "target) rather than who the room was focused on. Ask: why would a "
+            "Town player vote against the room's clear direction?\n"
+            "  2. Track who votes with whom across rounds — consistent voting "
+            "blocs may indicate Mafia coordination.\n"
+            "  3. Compare vote targets with night kill targets — Mafia rarely "
+            "votes for the player they plan to kill that night."
+        ),
         # Partial Carnegie - just the blending-in elements
         (
             "SOCIAL COVER:\nAppear as a regular Town member. Show the same concern, "
@@ -404,7 +420,13 @@ def build_villager_prompt(name: str, archetype: str, personality: str = "") -> s
             "  2. Which players always vote AGAINST the eventual kill target — "
             "they may be Mafia protecting each other.\n"
             "  3. Which players SWITCH their vote at the last moment to change "
-            "the outcome — this is 'Mafia Steering.'\n\n"
+            "the outcome — this is 'Mafia Steering.'\n"
+            "  4. LONE DIVERGENT VOTES: When one player votes a meaningfully "
+            "different target from seven or more others with no stated reason, "
+            "that is one of the strongest Mafia tells in the game. It often "
+            "means the player voted for who they wanted dead (their night kill "
+            "target) rather than who the room was focused on. Ask: why would a "
+            "Town player vote against the room's clear direction?\n\n"
             "Use this to build a case. 'Alice and Bob have voted together in "
             "every single round. That is not coincidence.' Concrete vote "
             "patterns beat gut feelings."
