@@ -130,7 +130,7 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
 | `agents/belief_state.py`     | Suspicion tracking per agent, overconfidence gating, staleness detection, BeliefGraph scum-tell detection, temporal consistency checking. |
 | `agents/summary.py`          | SummaryAgent — generates low-cognitive-load narrative summaries with recency-weighted target identification. |
 | `agents/providers.py`        | MAF ContextProviders — `BeliefStateProvider` and `CrossGameMemoryProvider` inject dynamic context into each agent call. |
-| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` enforces slang over boardroom vocabulary.       |
+| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` (slang enforcement), `ReasoningActionMiddleware` (REASONING/ACTION parsing), `BeliefUpdateMiddleware` (BELIEF_UPDATE extraction). |
 | `agents/game_tools.py`       | MAF `@tool`-decorated functions — `cast_vote` and `choose_target` for structured game actions. |
 | `agents/memory.py`           | Persistent cross-game memory — role-aware learnings stored as JSON, loaded each game.        |
 | `agents/narrator.py`         | Narrator agent — omniscient, impartial game master announcements.                            |
@@ -161,7 +161,7 @@ MafiaFramework/
 │   ├── belief_state.py         # Suspicion tracking, BeliefGraph, temporal checks
 │   ├── summary.py              # SummaryAgent — narrative summaries per phase
 │   ├── providers.py            # MAF ContextProviders (belief + memory injection)
-│   ├── middleware.py           # Corporate-speak enforcement middleware
+│   ├── middleware.py           # MAF middleware (corporate-speak, REASONING/ACTION parsing, belief updates)
 │   ├── game_tools.py           # @tool-decorated game actions (vote, target)
 │   ├── memory.py               # Cross-game persistent memory
 │   ├── narrator.py             # Narrator agent
@@ -187,7 +187,7 @@ MafiaFramework/
 │   └── personalities.py        # Performance personality definitions
 ├── tests/
 │   ├── __init__.py
-│   └── test_refactor.py        # 43 tests across 10 test classes
+│   └── test_refactor.py        # 63 tests across 19 test classes
 └── memory/                     # Cross-game learnings (gitignored)
 ```
 
@@ -271,10 +271,16 @@ Strategic roles must not be undermined by performance-first personalities:
 | Overconfident | TheParasite          | Redundant lock-on without internal contrast    |
 | Stubborn      | MythBuilder          | Debate-proof anchoring with narrative cover    |
 | Diplomatic    | TheConfessor         | Double softness — agent becomes invisible      |
+| Manipulative  | ThePerformer         | Self-referential dramatic stances — produced self-voting behaviour |
 
-### Frequency Cap
+### Frequency Caps
 
-No personality may appear more than **2 times** per game, preventing homogeneous rooms.
+- **Base cap:** No personality may appear more than **2 times** per game, preventing homogeneous rooms.
+- **Consensus personality cap:** Consensus-following personalities — TheParasite, TheConfessor, ThePerformer, MythBuilder — are capped at **1 per game**. These amplify or follow the room's existing direction rather than generating independent analysis.
+
+### Independent Archetype Floor
+
+At least **2 players** per game must be assigned an independent-reasoning archetype: Contrarian, Analytical, Impulsive, or Stubborn. If the initial random assignment falls short, one assignment is re-rolled to meet this floor. This ensures every game has enough resistance to consensus to produce meaningful deduction.
 
 ### Soft Warnings
 
@@ -323,10 +329,10 @@ Agents that reference impossible temporal events ("yesterday", "pre-day chat", "
 
 The SummaryAgent shows a "current target" before each phase. Mention counts are weighted by recency:
 - **Current round**: weight 1.0
-- **Previous round**: weight 0.5
-- **Older**: weight 0.1
+- **Previous round**: weight 0.3
+- **Older (2+ rounds)**: weight 0.05
 
-This prevents stale all-time mention counts from misleading the room.
+This aggressive decay ensures the current_target field reflects what the room is doing *right now*. Even 10 mentions from two rounds ago barely outweigh a single current-round mention.
 
 ### Cross-Game Persistent Memory
 
@@ -344,7 +350,14 @@ Agents use MAF-native structured actions:
 - `cast_vote` — Submit a vote during day phase
 - `choose_target` — Select a target during night phase
 
-The `corporate_speak_middleware` enforces conversational language — if an agent's action contains 3+ corporate/boardroom words, the response is re-invoked with a slang enforcement hint.
+Three middleware components run on every player agent:
+- **`corporate_speak_middleware`** — If an agent's action contains 3+ corporate/boardroom words, the response is re-invoked with a slang enforcement hint.
+- **`ReasoningActionMiddleware`** — Parses the `REASONING:`/`ACTION:` split from every response and stores parsed values on `context.metadata` so the orchestrator can read them cleanly.
+- **`BeliefUpdateMiddleware`** — Extracts `BELIEF_UPDATE` tags from reasoning text and stores the parsed updates on `context.metadata` for automatic belief state application.
+
+### Multi-Turn Conversational Memory
+
+Each player agent includes an `InMemoryHistoryProvider` from the MAF framework. This gives agents genuine multi-turn memory — each agent remembers what it and others actually said in prior rounds as proper message objects rather than a concatenated string. This reduces reasoning drift and partner-confusion errors.
 
 ### Iroh Protocol
 
@@ -371,8 +384,9 @@ Agent prompts are assembled in `prompts/builder.py` from layered components:
 5. **Role-Specific Protocols** — Mandatory blocks that must not be removed:
    - **Mafia**: Deception Layer, Syndicate Channel (partner coordination), Mafia Threat Check (4 mandatory pre-reasoning questions + solo 5th question)
    - **Detective**: Claim Protocol (mandatory red-check announcement), Iroh Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
-   - **Doctor**: Value-Protection Heuristic (protect the information engine, not the loudest talker), Iroh Protocol
-   - **Villager**: Voter Consistency (anti-Mafia-Steering tool — track vote blocs, last-moment switches)
+   - **Doctor**: Value-Protection Heuristic (protect the reasoner — evidence-based predictions, bandwagon resistance — not the loudest voice), Iroh Protocol
+   - **Villager**: Voter Consistency (anti-Mafia-Steering tool — track vote blocs, last-moment switches, lone divergent votes)
+   - **Detective**: Vote Pattern Analysis (lone divergent vote detection, voting bloc tracking, vote-vs-kill-target comparison)
    - **Narrator**: Night Anonymity Rule (no living player names during night)
 6. **Archetype Strategy Modifier** — Role-specific behavioural deviation
 7. **Voice / Personality Block** — Either the personality's register or the archetype's voice profile
@@ -384,7 +398,7 @@ Agent prompts are assembled in `prompts/builder.py` from layered components:
 Mafia agents must answer four questions explicitly in their reasoning before engaging with the room on every turn:
 1. Am I personally under suspicion?
 2. Is my partner under suspicion?
-3. Who poses the greatest current threat to Mafia?
+3. Who is the biggest threat to Mafia **among Town players**? (Partner is explicitly excluded — prevents partner-confusion errors)
 4. Is my cover story still consistent?
 
 When the partner has been eliminated, a fifth question fires: which player is most likely to identify me, and what must happen this round to prevent that?
@@ -394,7 +408,7 @@ When the partner has been eliminated, a fifth question fires: which player is mo
 | Role       | Frameworks                                                        |
 |------------|-------------------------------------------------------------------|
 | **Mafia**  | Game Theory + Sun Tzu + Machiavelli + Carnegie Execution + Strategic Glossary + Incentive Reasoning |
-| **Detective** | Game Theory + Sun Tzu + Social Cover + Strategic Glossary + Incentive Reasoning |
+| **Detective** | Game Theory + Sun Tzu + Vote Pattern Analysis + Social Cover + Strategic Glossary + Incentive Reasoning |
 | **Doctor** | Game Theory + Sun Tzu + Strategic Glossary + Incentive Reasoning  |
 | **Villager** | Carnegie Villager + Behavioural Psychology + Strategic Glossary + Incentive Reasoning |
 
@@ -577,7 +591,7 @@ The test suite validates core game mechanics without requiring Azure credentials
 python -m unittest tests.test_refactor -v
 ```
 
-**43 tests** across **10 test classes**:
+**63 tests** across **19 test classes**:
 
 | Test Class                         | Tests | Coverage                                                              |
 |------------------------------------|-------|-----------------------------------------------------------------------|
@@ -586,11 +600,20 @@ python -m unittest tests.test_refactor -v
 | `TestPersonalityExclusion`         | 5     | Role–personality exclusions, frequency cap, exhaustion error          |
 | `TestActionSplitting`              | 5     | REASONING/ACTION splitting, embedded marker stripping                 |
 | `TestGhostFiltering`              | 4     | Eliminated round tracking, public summary role hiding                 |
-| `TestArchetypePersonalityExclusion`| 6     | All 5 banned combinations enforced, non-excluded archetype allows all |
+| `TestArchetypePersonalityExclusion`| 6     | All 6 banned combinations enforced, non-excluded archetype allows all |
 | `TestReasoningOnlyParser`          | 4     | REASONING-only returns empty action, plain text still works           |
-| `TestRecencyWeighting`             | 3     | Current round outweighs old, previous round half weight               |
+| `TestRecencyWeighting`             | 3     | Current round outweighs old, previous round 0.3 weight               |
 | `TestMafiaPromptQuestions`         | 2     | Threat Check questions present, solo question references partner      |
 | `TestBeliefInstructionUpdate`      | 2     | "MAY" not "MUST" for BELIEF_UPDATE, archetype texture mentioned       |
+| `TestMafiaPartnerConfusionFix`     | 2     | Q3 excludes partner by name, asks only about Town players             |
+| `TestDoctorHeuristic`              | 3     | Protection signals present, danger signals present, no "SOCIAL ENGINE" language |
+| `TestStrongerRecencyDecay`         | 1     | 10 mentions from 2 rounds ago don't beat 1 current mention            |
+| `TestMiddlewareRegistration`       | 3     | ReasoningActionMiddleware and BeliefUpdateMiddleware exist and subclass AgentMiddleware |
+| `TestConsensusPersonalityCap`      | 5     | Consensus personalities capped at 1, non-consensus still at 2         |
+| `TestManipulativePerformerBan`     | 1     | Manipulative+ThePerformer banned                                      |
+| `TestLoneDivergentVoteInstruction` | 2     | Lone divergent vote instruction in Villager and Detective prompts     |
+| `TestIndependentArchetypeFloor`    | 2     | Independent archetypes and consensus personalities defined correctly   |
+| `TestInMemoryHistoryProvider`      | 1     | InMemoryHistoryProvider importable and instantiable                    |
 
 ---
 
