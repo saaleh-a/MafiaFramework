@@ -208,7 +208,6 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
             "A unified kill is a strong kill. A split means the Town got into your head."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
-        voice,
         # Mandatory Mafia pre-reasoning questions
         (
             f"MAFIA THREAT CHECK (answer these FIRST in every REASONING block, before anything else):\n"
@@ -234,6 +233,7 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
             f"as a Town player would. These questions are not optional. They fire "
             f"every turn."
         ),
+        voice,
         (
             "ALWAYS structure output as:\n"
             "REASONING: <your private thoughts - use first person: \"I think\", \"I need\", \"my position\">\n"

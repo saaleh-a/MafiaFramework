@@ -284,7 +284,7 @@ If 3 or more players receive the **Analytical** archetype in the same game, a wa
 
 | Combination           | Effect                                                                     |
 |-----------------------|----------------------------------------------------------------------------|
-| Reckless + Detective  | Highest-drama combo — Detective reveals immediately, likely dies next night |
+| Volatile + Detective  | Highest-drama combo — Detective reveals immediately, likely dies next night |
 | Manipulative + Mafia  | Significantly increases Mafia win probability                              |
 | Reactive + Mafia      | Self-destructive — agent gets louder under pressure, self-exposes           |
 
