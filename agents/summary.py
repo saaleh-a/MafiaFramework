@@ -107,8 +107,8 @@ class SummaryAgent:
         Identify who is being targeted most in recent discussion.
 
         Recency weighting: mentions in the current round carry full
-        weight (1.0), the previous round carries 0.5, and anything
-        older contributes 0.1.  This ensures the current_target field
+        weight (1.0), the previous round carries 0.3, and anything
+        older contributes 0.05.  This ensures the current_target field
         reflects what the room is doing *right now* rather than
         accumulating stale all-time counts.
 
@@ -132,13 +132,14 @@ class SummaryAgent:
                 continue
 
             # Recency weight based on round distance
+            # Current round dominates; 2+ rounds ago barely registers
             round_delta = current_round - entry.round_number
             if round_delta <= 0:
                 weight = 1.0
             elif round_delta == 1:
-                weight = 0.5
+                weight = 0.3
             else:
-                weight = 0.1
+                weight = 0.05
 
             for name in alive:
                 if name in action and name != entry.agent_name:
