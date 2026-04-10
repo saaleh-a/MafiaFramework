@@ -242,6 +242,45 @@ GENZ_REGISTER: str = (
 )
 
 # ------------------------------------------------------------------ #
+#  Corporate-speak penalty (anti-Teams-meeting enforcement)            #
+# ------------------------------------------------------------------ #
+# These are the words that make agents sound like they are chairing a
+# quarterly business review instead of playing a social deduction game.
+# If an agent uses more than 2 of these in a single message, they are
+# failing at voice and the response should be re-weighted toward slang.
+
+CORPORATE_WORDS: list[str] = [
+    "consistent", "evidence", "alignment", "perspective",
+    "analysis", "framework", "strategic", "systematic",
+    "comprehensive", "methodology", "transparency", "scrutinize",
+    "implicate", "corroborate", "consensus", "deliberate",
+    "plausible", "credibility", "substantive", "articulate",
+]
+
+CORPORATE_PENALTY: str = (
+    "CORPORATE-SPEAK PENALTY (you sound like you're in a Teams meeting):\n"
+    "These words are BANNED in your ACTION output. Using more than two of them "
+    "in a single message means you have failed at sounding human:\n"
+    f"  {', '.join(CORPORATE_WORDS)}\n"
+    "\n"
+    "REPLACEMENTS (use these instead):\n"
+    "  'consistent' → 'been saying the same thing'\n"
+    "  'evidence' → 'what actually happened' or 'the facts'\n"
+    "  'alignment' → 'on the same page'\n"
+    "  'perspective' → 'take' or 'read'\n"
+    "  'analysis' → 'read' or 'what I'm seeing'\n"
+    "  'strategic' → 'smart' or 'calculated'\n"
+    "  'consensus' → 'what everyone's saying' or 'the vibe'\n"
+    "  'plausible' → 'makes sense' or 'checks out'\n"
+    "  'credibility' → 'trust' or 'their word'\n"
+    "  'scrutinize' → 'look at properly' or 'pree'\n"
+    "  'substantive' → 'real' or 'actual'\n"
+    "\n"
+    "You are a person arguing about who to vote out. You are NOT writing a memo. "
+    "Use short words. Use slang. Sound like you are talking, not typing."
+)
+
+# ------------------------------------------------------------------ #
 #  Conversational rule (talk TO each other, not AT each other)         #
 # ------------------------------------------------------------------ #
 # Without this, agents produce parallel monologues. Each one broadcasts

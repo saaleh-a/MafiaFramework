@@ -136,6 +136,26 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     return reasoning, action
 
 
+# Corporate-speak words that trigger a slang-enforcement retry.
+# Imported from archetypes at module level would create a circular
+# dependency, so we define the check list here independently.
+_CORPORATE_WORDS = {
+    "consistent", "evidence", "alignment", "perspective",
+    "analysis", "framework", "strategic", "systematic",
+    "comprehensive", "methodology", "transparency", "scrutinize",
+    "implicate", "corroborate", "consensus", "deliberate",
+    "plausible", "credibility", "substantive", "articulate",
+}
+
+_CORPORATE_THRESHOLD = 3  # more than this many corporate words → retry
+
+
+def _count_corporate_words(text: str) -> int:
+    """Count how many distinct corporate-speak words appear in *text*."""
+    text_lower = text.lower()
+    return sum(1 for w in _CORPORATE_WORDS if w in text_lower)
+
+
 async def run_agent_stream(
     agent,
     prompt: str,
@@ -175,6 +195,22 @@ async def run_agent_stream(
             # If the action is empty (e.g. REASONING leaked into ACTION
             # with no real action), retry when possible.
             if not action.strip() and attempt < _MAX_RETRIES:
+                continue
+
+            # Corporate-speak enforcement: if the ACTION section is
+            # loaded with boardroom vocabulary, retry with a hint to
+            # use slang.  Only retry once for this — after that, accept
+            # whatever comes back to avoid infinite loops.
+            if (
+                _count_corporate_words(action) >= _CORPORATE_THRESHOLD
+                and attempt < 1
+            ):
+                prompt = (
+                    prompt
+                    + "\n\n⚠ YOUR LAST RESPONSE SOUNDED LIKE A CORPORATE MEMO. "
+                    "Rewrite using slang. Short words. Road logic. "
+                    "You are in a pub argument, not a boardroom."
+                )
                 continue
 
             return reasoning, action

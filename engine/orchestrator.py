@@ -42,6 +42,8 @@ class MafiaGameOrchestrator:
         villagers:    list[VillagerAgent],
         debug:        bool = False,
         quiet:        bool = False,
+        memory_store: GameMemoryStore | None = None,
+        assignments:  list[dict] | None = None,
     ) -> None:
         self.gs        = game_state
         self.narrator  = narrator
@@ -51,6 +53,8 @@ class MafiaGameOrchestrator:
         self.villagers = villagers
         self.debug     = debug
         self.quiet     = quiet
+        self._memory   = memory_store
+        self._assignments = assignments or []
         self._agents: dict[str, any] = {}
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
@@ -88,6 +92,16 @@ class MafiaGameOrchestrator:
 
         winner = self.gs.check_win_condition()
         print_game_over(winner, self.gs)
+
+        # Persist cross-game learnings
+        if self._memory:
+            self._memory.record_game_outcome(
+                winner=winner,
+                role_assignments=self._assignments,
+                round_count=self.gs.round_number,
+            )
+            self._memory.save()
+
         return winner
 
     async def _run_day_phase(self) -> None:
@@ -127,7 +141,18 @@ class MafiaGameOrchestrator:
                 # Belief State: build belief prompt for this agent
                 belief = self._beliefs.get(name)
                 belief_prefix = ""
+
+                # Inject cross-game memory if available
+                if self._memory:
+                    mem_prefix = self._memory.get_memory_prefix(agent.role)
+                    if mem_prefix:
+                        belief_prefix += mem_prefix + "\n\n"
+
                 if belief:
+                    # Check staleness before building the prompt —
+                    # this updates the frustration flag which
+                    # build_belief_prompt_injection reads.
+                    belief.check_staleness()
                     belief_prefix = (
                         build_belief_prompt_injection(belief, agent.archetype)
                         + "\n\n"

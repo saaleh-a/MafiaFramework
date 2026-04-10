@@ -49,6 +49,11 @@ class SuspicionState:
     update_count: int = 0
     self_preservation_threshold: float = SELF_PRESERVATION_THRESHOLD
 
+    # Staleness tracking: detect when beliefs loop without new evidence
+    _previous_snapshot: dict[str, float] = field(default_factory=dict)
+    _stale_rounds: int = 0
+    _STALENESS_THRESHOLD: int = 2  # consecutive rounds with <0.05 total change
+
     def initialize(self, player_names: list[str], num_mafia: int = 2) -> None:
         """Set uniform prior: P(mafia) = num_mafia / total_players."""
         prior = num_mafia / len(player_names) if player_names else 0.0
@@ -61,6 +66,31 @@ class SuspicionState:
         clamped = max(0.01, min(0.99, new_probability))
         self.probabilities[player_name] = clamped
         self.update_count += 1
+
+    def check_staleness(self) -> bool:
+        """
+        Check if beliefs have barely moved since the last snapshot.
+        Returns True if the agent is stuck in a belief loop.
+        Call this at the end of each discussion round.
+        """
+        if not self._previous_snapshot:
+            self._previous_snapshot = dict(self.probabilities)
+            return False
+        total_delta = sum(
+            abs(self.probabilities.get(n, 0.0) - self._previous_snapshot.get(n, 0.0))
+            for n in set(self.probabilities) | set(self._previous_snapshot)
+        )
+        self._previous_snapshot = dict(self.probabilities)
+        if total_delta < 0.05:
+            self._stale_rounds += 1
+        else:
+            self._stale_rounds = 0
+        return self._stale_rounds >= self._STALENESS_THRESHOLD
+
+    @property
+    def is_frustrated(self) -> bool:
+        """True if beliefs have been stale for too long."""
+        return self._stale_rounds >= self._STALENESS_THRESHOLD
 
     def get_certainty(self, player_name: str) -> float:
         """Return the current mafia-probability for a player."""
@@ -151,6 +181,7 @@ def build_belief_prompt_injection(
     1. Shows the agent their current suspicion state
     2. Asks them to update levels in their REASONING with evidence
     3. Gates overconfident declarations if certainty is low
+    4. Triggers frustration state when beliefs are stale (looping)
     """
     parts = [
         "SUSPICION CHECK (System 2 — slow down and think):",
@@ -171,6 +202,21 @@ def build_belief_prompt_injection(
                 "You MUST NOT use declarative accusations until your "
                 "certainty is higher. Hedge your language this round."
             )
+
+    # Staleness/Frustration check: break the belief loop
+    if belief.is_frustrated:
+        parts.append(
+            "\n⚠ FRUSTRATION STATE: Your reads have NOT changed in multiple rounds. "
+            "You are stuck in a loop recalculating the same numbers. STOP.\n"
+            "This means the conversation has stalled and you are part of the problem.\n"
+            "You MUST do ONE of the following in your next ACTION:\n"
+            "  1. Name a COMPLETELY DIFFERENT suspect you have not focused on before\n"
+            "  2. Challenge someone who has been quiet — demand they take a position\n"
+            "  3. Call out the group for going in circles and force a new angle\n"
+            "  4. Share new information you have been holding back\n"
+            "Do NOT repeat your previous read. Do NOT recalculate the same probabilities. "
+            "The room is stuck. Break it."
+        )
 
     return "\n".join(parts)
 
