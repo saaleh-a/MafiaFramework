@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from collections.abc import Awaitable, Callable
 
 from config.settings import (
     MAFIA_MAX_CONCURRENT_CALLS,
@@ -110,7 +111,11 @@ def get_retry_stats() -> dict[str, int]:
     return dict(_retry_counters)
 
 
-async def rate_limited_call(coro_factory, *, player_name: str = "unknown"):
+async def rate_limited_call(
+    coro_factory: "Callable[[], Awaitable]",
+    *,
+    player_name: str = "unknown",
+):
     """
     Execute *coro_factory()* with rate limiting and exponential backoff.
 

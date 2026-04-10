@@ -41,6 +41,10 @@ IROH_FULL_REVEAL_THRESHOLD = 0.55   # Immediate full reveal
 # lower all thresholds by this amount (information > survival)
 IROH_RED_CHECK_ADJUSTMENT = 0.10
 
+# Archetype modulation thresholds for belief updates
+STRONG_EVIDENCE_THRESHOLD = 0.15    # Overconfident/Stubborn: require strong evidence
+WEAK_EVIDENCE_THRESHOLD = 0.05      # Volatile/Reactive: update on any signal
+
 
 @dataclass
 class SuspicionState:
@@ -255,16 +259,17 @@ def build_belief_prompt_injection(
     # Archetype-specific belief update modulation
     if archetype in ("Overconfident", "Stubborn"):
         parts.append(
-            "ARCHETYPE MODULATION: You are " + archetype + ". You only update beliefs "
-            "on STRONG evidence (threshold: beliefs must shift by at least 0.15 to warrant "
-            "a change). Small signals do not move you. Explain why evidence is strong enough "
-            "to shift your read, or explicitly state it is not."
+            f"ARCHETYPE MODULATION: You are {archetype}. You only update beliefs "
+            f"on STRONG evidence (threshold: beliefs must shift by at least "
+            f"{STRONG_EVIDENCE_THRESHOLD} to warrant "
+            f"a change). Small signals do not move you. Explain why evidence is strong enough "
+            f"to shift your read, or explicitly state it is not."
         )
     elif archetype in ("Volatile", "Reactive"):
         parts.append(
-            "ARCHETYPE MODULATION: You are " + archetype + ". You update on ANY new information "
-            "(threshold: 0.05 change is sufficient). New information feels urgent. Show why "
-            "the latest development reshapes your read."
+            f"ARCHETYPE MODULATION: You are {archetype}. You update on ANY new information "
+            f"(threshold: {WEAK_EVIDENCE_THRESHOLD} change is sufficient). New information "
+            f"feels urgent. Show why the latest development reshapes your read."
         )
     elif archetype in ("Analytical", "Methodical"):
         parts.append(

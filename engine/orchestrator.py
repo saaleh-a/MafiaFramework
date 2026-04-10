@@ -47,21 +47,6 @@ from config.settings  import MAFIA_MAX_CONCURRENT_CALLS
 
 logger = logging.getLogger(__name__)
 
-# Phase-tier semaphore: limits concurrency within a single phase to
-# prevent burst patterns during discussion→vote→night transitions.
-_phase_semaphore: asyncio.Semaphore | None = None
-
-
-def _get_phase_semaphore() -> asyncio.Semaphore:
-    """Lazily create the per-phase concurrency limiter."""
-    global _phase_semaphore
-    if _phase_semaphore is None:
-        # Allow slightly fewer concurrent calls per phase than the global
-        # limit so that different phases don't compete for the full pool.
-        phase_limit = max(2, MAFIA_MAX_CONCURRENT_CALLS - 1)
-        _phase_semaphore = asyncio.Semaphore(phase_limit)
-    return _phase_semaphore
-
 
 class MafiaGameOrchestrator:
     def __init__(
@@ -112,6 +97,10 @@ class MafiaGameOrchestrator:
 
         # Track vote parse failures per agent for format reinforcement
         self._vote_parse_failures: dict[str, int] = {}
+
+        # Phase-tier semaphore: limits concurrency within a single phase
+        phase_limit = max(2, MAFIA_MAX_CONCURRENT_CALLS - 1)
+        self._phase_semaphore = asyncio.Semaphore(phase_limit)
 
         # Populate MAF ContextProvider state on each agent's session.
         # This is how the BeliefStateProvider and CrossGameMemoryProvider
@@ -237,7 +226,10 @@ class MafiaGameOrchestrator:
                 sum(own_suspicion_values) / len(own_suspicion_values)
                 if own_suspicion_values else 0.0
             )
-            # If Doctor is threatened (>0.3 suspicion), protect self
+            # If Doctor is threatened, protect self. Note: this threshold
+            # (0.3) is intentionally lower than the prompt's 0.6 override
+            # because this path fires only when the API call failed entirely
+            # — a conservative self-protect is safer than random in that case.
             if avg_suspicion > 0.3 and name in valid:
                 logger.warning(
                     "[%s] Protection call failed — self-protect (suspicion %.2f)",

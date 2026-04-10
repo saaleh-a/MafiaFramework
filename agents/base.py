@@ -203,11 +203,11 @@ async def run_agent_stream(
 
     async def _do_stream_call() -> str:
         """Single streaming API call — returns the concatenated text."""
-        full_text = ""
+        chunks: list[str] = []
         async for chunk in agent.run(prompt, stream=True, session=session):
             if chunk.text:
-                full_text += chunk.text
-        return full_text
+                chunks.append(chunk.text)
+        return "".join(chunks)
 
     async def _do_non_stream_call() -> str:
         """Non-streaming fallback — returns the response text."""
