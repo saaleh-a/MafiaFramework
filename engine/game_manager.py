@@ -64,6 +64,51 @@ def _pick_personality(demo: bool = False) -> str:
     return random.choice(pool)
 
 
+# ------------------------------------------------------------------ #
+#  Role-Personality exclusion table                                    #
+# ------------------------------------------------------------------ #
+# Strategic roles must not be "lobotomised" by performance-first
+# personalities that undermine their core mechanics.
+PERSONALITY_EXCLUSIONS: dict[str, list[str]] = {
+    "Detective": ["TheParasite", "ThePerformer"],
+    "Doctor":    ["TheParasite", "ThePerformer"],
+}
+
+# No personality may appear more than this many times per game.
+_PERSONALITY_FREQUENCY_CAP = 2
+
+
+def _pick_personality_constrained(
+    role: str,
+    current_counts: dict[str, int],
+    demo: bool = False,
+) -> str:
+    """
+    Pick a personality that respects:
+      1. The role-personality exclusion table.
+      2. The per-game frequency cap.
+
+    Raises ValueError if no valid personality remains (should never
+    happen with a reasonable pool / player count).
+    """
+    pool = list(DEMO_PERSONALITIES if demo else ALL_PERSONALITIES)
+
+    excluded = set(PERSONALITY_EXCLUSIONS.get(role, []))
+    eligible = [
+        p for p in pool
+        if p not in excluded
+        and current_counts.get(p, 0) < _PERSONALITY_FREQUENCY_CAP
+    ]
+
+    if not eligible:
+        raise ValueError(
+            f"No valid personality for role={role} with current counts "
+            f"{current_counts}. Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
+        )
+
+    return random.choice(eligible)
+
+
 def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -> GameSetup:
     # 0. Load persistent cross-game memory
     memory_store = GameMemoryStore()
@@ -86,10 +131,13 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
         name: _pick_archetype(role_map[name]) for name in names
     }
 
-    # 3b. Assign random personality per player
-    personality_map: dict[str, str] = {
-        name: _pick_personality(demo) for name in names
-    }
+    # 3b. Assign random personality per player (with exclusion + frequency cap)
+    personality_map: dict[str, str] = {}
+    personality_counts: dict[str, int] = {}
+    for name in names:
+        p = _pick_personality_constrained(role_map[name], personality_counts, demo)
+        personality_map[name] = p
+        personality_counts[p] = personality_counts.get(p, 0) + 1
 
     # 4. Build assignment table
     assignments = [

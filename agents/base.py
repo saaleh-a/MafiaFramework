@@ -107,13 +107,12 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     Returns (reasoning_text, action_text).
     If no ACTION: marker found, returns ("", full_text).
 
-    Uses the *last* ACTION: marker so that when the model mistakenly
+    Uses rsplit("ACTION:", 1) so that when the model mistakenly
     writes  ACTION: REASONING: <thoughts> ACTION: <real action>
     we still recover the real action from the final marker.
 
-    If REASONING: leaks into the action section with no subsequent
-    ACTION: marker, the action is treated as empty so the caller
-    can retry.
+    Any "REASONING:" strings found inside the action block are
+    recursively stripped to prevent history pollution.
     """
     text = text.strip()
     if "ACTION:" not in text:
@@ -132,16 +131,28 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
         reasoning = reasoning.replace(marker, " ")
     reasoning = " ".join(reasoning.split())  # collapse whitespace
 
-    # If REASONING: still leaked into the action section (the model
-    # wrote only one ACTION: followed by REASONING:), the real action
-    # is missing.  Absorb the text into reasoning and return an empty
-    # action so the retry logic can fire.
+    # Recursively strip ALL "REASONING:" markers from the action block
+    # to prevent history pollution.  If the action is *entirely*
+    # REASONING: content (starts with the marker), absorb into
+    # reasoning and return empty action so the retry logic fires.
     if action.upper().startswith("REASONING:"):
         leaked = action[len("REASONING:"):].strip()
         reasoning = f"{reasoning} {leaked}".strip()
         action = ""
+    else:
+        # Strip any embedded REASONING: markers inside the action
+        cleaned = _recursive_strip_marker(action, "REASONING:")
+        action = cleaned.strip()
 
     return reasoning, action
+
+
+def _recursive_strip_marker(text: str, marker: str) -> str:
+    """Remove all occurrences of *marker* (case-insensitive) from *text*."""
+    pattern = re.compile(re.escape(marker), re.IGNORECASE)
+    cleaned = pattern.sub(" ", text)
+    # Collapse resulting multi-spaces
+    return " ".join(cleaned.split())
 
 
 def _extract_tool_result(full_text: str) -> str | None:

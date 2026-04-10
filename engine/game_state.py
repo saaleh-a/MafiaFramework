@@ -18,6 +18,7 @@ class PlayerState:
     personality: str   = ""   # performance layer (e.g. "TheGhost")
     is_alive: bool     = True
     is_revealed: bool  = False
+    eliminated_round: int | None = None  # round in which the player was eliminated
 
 
 @dataclass
@@ -98,9 +99,10 @@ class GameState:
 
     def eliminate_player(self, name: str) -> None:
         if name in self.players:
-            self.players[name].is_alive   = False
-            self.players[name].is_revealed = True
-            self.eliminated_this_round     = name
+            self.players[name].is_alive         = False
+            self.players[name].is_revealed      = True
+            self.players[name].eliminated_round  = self.round_number
+            self.eliminated_this_round           = name
 
     def apply_night_actions(self) -> tuple[str | None, bool]:
         if self.night_kill_target is None:

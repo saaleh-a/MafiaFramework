@@ -17,6 +17,7 @@ v4 changes (from v3):
 """
 
 import random
+import re
 import sys
 from engine.game_state import GameState, GamePhase
 from engine.game_log import (
@@ -418,17 +419,62 @@ class MafiaGameOrchestrator:
         print_agent_action(name, role, archetype, display_reasoning, action, not self.debug, personality=personality)
 
     def _parse_vote(self, action: str, valid_targets: list[str], voter: str) -> str | None:
+        """
+        Intent-based vote parser with three priority tiers.
+
+        Priority 1: Explicit ``VOTE: {name}`` tags.
+        Priority 2: Intent phrases (``I'm voting for …``, ``Staying on …``).
+        Priority 3: Last mentioned valid name (avoids parsing addressees).
+        Hard filter: A self-vote always returns ``None``.
+        """
         text = action.strip()
-        if "VOTE:" in text.upper():
-            after = text.upper().split("VOTE:", 1)[1].strip()
+
+        # ------------------------------------------------------------------
+        # Priority 1 — explicit VOTE: tag
+        # ------------------------------------------------------------------
+        vote_tag = re.search(r"VOTE:\s*(\w+)", text, re.IGNORECASE)
+        if vote_tag:
+            tagged = vote_tag.group(1).strip()
             for target in valid_targets:
-                if target.upper() in after and target != voter:
+                if target.lower() == tagged.lower() and target != voter:
                     return target
+
+        # ------------------------------------------------------------------
+        # Priority 2 — intent phrases
+        # ------------------------------------------------------------------
+        intent_patterns = [
+            r"(?:I(?:'m| am)\s+voting\s+(?:for\s+)?)",
+            r"(?:my\s+vote\s+(?:is\s+(?:for\s+)?|goes?\s+to\s+))",
+            r"(?:I\s+vote\s+(?:for\s+)?)",
+            r"(?:staying\s+on\s+)",
+            r"(?:I(?:'m| am)\s+going\s+with\s+)",
+            r"(?:locking\s+(?:in\s+)?(?:on\s+)?)",
+            r"(?:voting\s+out\s+)",
+            r"(?:I\s+cast\s+(?:my\s+)?vote\s+(?:for\s+)?)",
+        ]
+        combined = "|".join(intent_patterns)
+        intent_match = re.search(
+            rf"(?:{combined})(\w+)", text, re.IGNORECASE,
+        )
+        if intent_match:
+            candidate = intent_match.group(1).strip()
+            for target in valid_targets:
+                if target.lower() == candidate.lower() and target != voter:
+                    return target
+
+        # ------------------------------------------------------------------
+        # Priority 3 — last mentioned valid name
+        # ------------------------------------------------------------------
+        last_found: str | None = None
         text_lower = text.lower()
         for target in valid_targets:
-            if target.lower() in text_lower and target != voter:
-                return target
-        return None
+            # Find the *last* occurrence index for each target
+            idx = text_lower.rfind(target.lower())
+            if idx != -1 and target != voter:
+                if last_found is None or idx > text_lower.rfind(last_found.lower()):
+                    last_found = target
+
+        return last_found  # may be None if nothing matched
 
     @staticmethod
     def _parse_target(action: str, valid_targets: list[str]) -> str | None:
