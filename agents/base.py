@@ -4,6 +4,8 @@ import re
 import sys
 
 from agent_framework import AgentSession
+from prompts.archetypes import CORPORATE_WORDS
+from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT
 
 
 def format_discussion_prompt(history: list[str], agent_name: str) -> str:
@@ -93,6 +95,12 @@ def _strip_refusal(text: str) -> str:
     return text.strip()
 
 
+def _count_corporate(text: str) -> int:
+    """Count how many corporate-speak words appear in *text*."""
+    text_lower = text.lower()
+    return sum(1 for w in CORPORATE_WORDS if w in text_lower)
+
+
 def parse_reasoning_action(text: str) -> tuple[str, str]:
     """
     Splits the model output on ACTION:.
@@ -160,8 +168,10 @@ async def run_agent_stream(
     genuine memory of every prior turn — it can reference what it and
     others actually said instead of confabulating.
 
-    Corporate-speak enforcement is now handled by agent_middleware
-    (agents/middleware.py) registered on the Agent — not here.
+    Corporate-speak enforcement for streaming calls is handled inline
+    here (the agent middleware can only enforce it for non-streaming
+    calls because the ResponseStream text is not available until after
+    the stream is consumed).
 
     Wraps the streaming call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
@@ -169,6 +179,7 @@ async def run_agent_stream(
     content-filter refusal or a corrupted response (e.g. REASONING
     leaked into the ACTION section with no real action text).
     """
+    corporate_retried = False
     for attempt in range(_MAX_RETRIES + 1):
         try:
             full_text = ""
@@ -195,6 +206,17 @@ async def run_agent_stream(
             # If the action is empty (e.g. REASONING leaked into ACTION
             # with no real action), retry when possible.
             if not action.strip() and attempt < _MAX_RETRIES:
+                continue
+
+            # Corporate-speak enforcement for streaming: the middleware
+            # cannot check streaming responses, so we do it here once.
+            if (
+                not corporate_retried
+                and attempt < _MAX_RETRIES
+                and _count_corporate(action) >= _CORPORATE_THRESHOLD
+            ):
+                corporate_retried = True
+                prompt = CORPORATE_ENFORCEMENT_HINT + "\n\n" + prompt
                 continue
 
             return reasoning, action
