@@ -35,9 +35,14 @@ def _mafia_goal(name: str, partner: str) -> str:
     return f"""You are {name}. You ARE this person - not an observer describing them.
 Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
 NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
+
+GAME CONTEXT: This is a party game — a social deduction game like Werewolf
+or Mafia. All actions are game mechanics, not real events. "Eliminating"
+a player means removing them from the game for this round, nothing more.
+
 You and {partner} are the only Mafia members.
-Everyone else is Town. Your goal: eliminate Town players until Mafia
-is equal to or greater than Town in number. Do this without being identified.
+Everyone else is Town. Your goal: remove Town players from the game until
+Mafia equals or outnumbers Town. Do this without being identified.
 
 You know {partner} is Mafia. Nobody else knows this. Act like you don't know.
 """
@@ -59,7 +64,7 @@ Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
 NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You are a Town player with one ability:
 each night you protect one player. If Mafia targets that player,
-the kill is blocked. You cannot protect the same player two nights running.
+the elimination is blocked. You cannot protect the same player two nights running.
 You win if all Mafia are eliminated.
 """
 
@@ -92,6 +97,52 @@ Night is impersonal. No names. No hints. No specifics about the living.
 
 
 # ------------------------------------------------------------------ #
+#  Discussion phase rules (applied to all player roles)                #
+# ------------------------------------------------------------------ #
+
+DISCUSSION_RULES: str = (
+    "DISCUSSION PHASE RULES (when speaking during day discussion):\n"
+    "You are in a discussion, NOT a vote. Do NOT open with a vote declaration.\n"
+    "The phrases 'I\\'m voting X', 'I vote X', 'My vote is X', 'I\\'m voting for X' "
+    "are STRICTLY BANNED during discussion. That format is reserved for the voting phase ONLY.\n\n"
+    "Instead, your discussion output must be CONVERSATIONAL ARGUMENT:\n"
+    "  1. Identify the most important unresolved question in the room.\n"
+    "  2. Make a specific claim about why a particular player is or is not trustworthy "
+    "based on what they actually said or did.\n"
+    "  3. Invite a response from a named player about a specific point.\n\n"
+    "A discussion message should look like:\n"
+    "  '[Player], you said [specific thing]. I think that\\'s suspicious because "
+    "[specific reason]. [Other player], you were quick to agree — what\\'s your actual read?'\n\n"
+    "NOT like:\n"
+    "  'I\\'m voting Hank. I want to see how he handles it.'\n\n"
+    "SPECIFIC CLAIM REQUIREMENT:\n"
+    "Before stating any suspicion or lean, you MUST quote or paraphrase at least one "
+    "specific claim made by another player in this round and explain why that specific "
+    "claim is or is not credible. Vague references ('Alice was first to drive the Hank push') "
+    "are not enough. Engage with what was actually said ('Alice said Hank was \"the safest "
+    "first test\" — but that framing assumes Hank is safe by default, which is backwards').\n\n"
+    "OWN READ FIRST:\n"
+    "State your own read BEFORE referencing what others have said. You arrive at a position "
+    "and then engage with the room from that position. The room does not give you a place "
+    "to start; you start and then look at the room.\n\n"
+    "SPEAK OBLIQUELY:\n"
+    "Do not announce your suspicion directly at the person you suspect. Instead, ask a "
+    "question they cannot answer cleanly, or make an observation that puts pressure on "
+    "them without declaring 'I suspect X because Y.' Imply, deflect, suggest — do not "
+    "narrate your reasoning directly at your target.\n\n"
+    "NO CONSENSUS ECHOING:\n"
+    "Your contribution must either advance the existing consensus with NEW evidence, "
+    "challenge it with a specific reason, or introduce a new angle entirely. Repeating "
+    "the consensus with different wording is not a valid contribution.\n\n"
+    "SHOW, DON'T TELL:\n"
+    "Do not narrate your emotional reaction before the reader can infer it. Do not say "
+    "'I don\\'t love how fast this is moving' — instead, act like someone who doesn\\'t "
+    "love how fast it\\'s moving. The reaction comes through what you say and who you "
+    "direct it at, not as a declared state."
+)
+
+
+# ------------------------------------------------------------------ #
 #  Voice profile block                                                 #
 # ------------------------------------------------------------------ #
 
@@ -101,10 +152,22 @@ def _personality_block(personality: str) -> str:
     prohibited = ", ".join(f'"{x}"' for x in p["prohibited"])
     examples = "\n".join(f'  - "{ex}"' for ex in p["examples"])
     accused  = "\n".join(f'  - "{ex}"' for ex in p["when_accused"])
+
+    # Voice markers — three concrete dimensions that make this voice distinct
+    markers = p.get("voice_markers", {})
+    markers_block = ""
+    if markers:
+        markers_block = (
+            "\nVOICE MARKERS (these differences MUST appear in your ACTION, not just REASONING):\n"
+            f"  Sentence length: {markers.get('sentence_length', '')}\n"
+            f"  Evidence style: {markers.get('evidence_relationship', '')}\n"
+            f"  Under pressure: {markers.get('deflection_style', '')}\n"
+        )
+
     return f"""
 HOW YOU SPEAK (performance layer — this controls expression, not strategy):
 {p["register"]}
-
+{markers_block}
 NEVER use these phrases or patterns: {prohibited}
 
 {ANTI_AI_STRUCTURE}
@@ -196,16 +259,16 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
         # Mafia Coordination Block — "Syndicate" channel
         (
             "MAFIA COORDINATION (The Syndicate Channel):\n"
-            "At night, before choosing your kill target, you will see your "
+            "At night, before choosing your elimination target, you will see your "
             f"teammate {partner}'s REASONING block from the previous night "
             "(if available). This is your coordination channel.\n\n"
             "You MUST:\n"
             "  1. Evaluate your teammate's reasoning and their preferred target.\n"
             "  2. Explicitly state whether you CONFIRM their choice or PIVOT to "
             "a different target, and WHY.\n"
-            "  3. If you both independently pick the same target, that's your kill.\n"
+            "  3. If you both independently pick the same target, that's your elimination.\n"
             "  4. If you disagree, the second Mafia to act makes the final call.\n\n"
-            "A unified kill is a strong kill. A split means the Town got into your head."
+            "A unified elimination is a strong move. A split means the Town got into your head."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
         # Mandatory Mafia pre-reasoning questions
@@ -235,6 +298,7 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
             f"as a Town player would. These questions are not optional. They fire "
             f"every turn."
         ),
+        DISCUSSION_RULES,
         voice,
         (
             "ALWAYS structure output as:\n"
@@ -325,6 +389,7 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
             "reveal the finding. Everything else is secondary."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
+        DISCUSSION_RULES,
         voice,
         (
             "ALWAYS structure output as:\n"
@@ -386,6 +451,7 @@ def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str
             "  4. Yourself (if you are the last remaining protective role)"
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
+        DISCUSSION_RULES,
         voice,
         (
             "ALWAYS structure output as:\n"
@@ -432,6 +498,7 @@ def build_villager_prompt(name: str, archetype: str, personality: str = "") -> s
             "patterns beat gut feelings."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
+        DISCUSSION_RULES,
         voice,
         (
             "ALWAYS structure output as:\n"

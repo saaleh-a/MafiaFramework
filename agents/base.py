@@ -12,53 +12,44 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
     """
     Format discussion history to encourage conversational responses.
 
+    ARCHITECTURE: The injected discussion_history contains ONLY other
+    agents' messages from the current round's discussion. The agent's
+    own prior turns are handled by InMemoryHistoryProvider and do not
+    appear here. This avoids redundancy and context confusion.
+
     Separates the last message from earlier discussion so the agent
     knows exactly who just spoke and what they said — making it natural
     to respond TO that person rather than monologuing past them.
     """
-    if not history:
+    # Filter out this agent's own messages — their history provider
+    # already supplies their own prior turns.
+    others_history = [
+        h for h in history if not h.startswith(f"{agent_name}:")
+    ]
+
+    if not others_history:
         return (
-            "Discussion:\nNobody has spoken yet. You are first.\n"
+            "What others have said in this round's discussion:\n"
+            "Nobody else has spoken yet. You are first.\n"
             "Pick someone by name and ask them a direct question, "
             "or throw out a concrete suspicion with a reason."
         )
 
-    if len(history) == 1:
-        last_speaker = _extract_name(history[0])
-        if last_speaker == agent_name:
-            return (
-                f"Discussion:\n{history[0]}\n\n"
-                f"^ That was you. Wait for others to respond, then react."
-            )
+    if len(others_history) == 1:
+        last_speaker = _extract_name(others_history[0])
         return (
-            f"Discussion:\n{history[0]}\n\n"
+            f"What others have said in this round's discussion:\n"
+            f"{others_history[0]}\n\n"
             f"^ {last_speaker} just spoke. "
             f"Respond directly to what they said."
         )
 
-    earlier = "\n".join(history[:-1])
-    last = history[-1]
+    earlier = "\n".join(others_history[:-1])
+    last = others_history[-1]
     last_speaker = _extract_name(last)
 
-    if last_speaker == agent_name:
-        # Find the last message from someone else
-        other_msgs = [h for h in history if not h.startswith(f"{agent_name}:")]
-        if other_msgs:
-            respond_to = other_msgs[-1]
-            respond_name = _extract_name(respond_to)
-            return (
-                f"Earlier discussion:\n{earlier}\n\n"
-                f"LAST MESSAGE:\n{last}\n\n"
-                f"^ That was you. Respond to what {respond_name} said earlier, "
-                f"or address someone else in the room."
-            )
-        return (
-            f"Full discussion:\n{chr(10).join(history)}\n\n"
-            f"Address someone specific by name."
-        )
-
     return (
-        f"Earlier discussion:\n{earlier}\n\n"
+        f"What others have said in this round's discussion:\n{earlier}\n\n"
         f"LAST MESSAGE (respond to this):\n{last}\n\n"
         f"^ {last_speaker} just said that. Talk TO them. "
         f"Agree, disagree, ask a follow-up, or challenge them directly."
