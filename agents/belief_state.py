@@ -281,6 +281,10 @@ class BeliefGraph:
     prompt so agents can reason about patterns, not just quotes.
     """
 
+    # Minimum character length for reasoning to count as "substantive"
+    # when checking for late bandwagons. Below this → likely thin agreement.
+    MIN_REASONING_LENGTH: int = 30
+
     # player_name -> list of scum-tell descriptions
     flags: dict[str, list[str]] = field(default_factory=dict)
 
@@ -314,8 +318,8 @@ class BeliefGraph:
         existing = sum(1 for t in current_votes.values() if t == target)
         if existing < 2:
             return None
-        # Check if the reasoning is substantive (>30 chars, not just "I agree")
-        thin = len(reasoning.strip()) < 30
+        # Check if the reasoning is substantive (meets min length, not just "I agree")
+        thin = len(reasoning.strip()) < self.MIN_REASONING_LENGTH
         agreeing = any(
             p in reasoning.lower()
             for p in ["i agree", "same", "what they said", "yeah", "ditto"]
@@ -452,10 +456,11 @@ class TemporalConsistencyChecker:
                 # "yesterday" is only a slip on round 1
                 if "yesterday" in description and round_number > 1:
                     continue
-                # "last night" is only a slip on round 1
-                if "prior game" in description:
-                    # Always a slip — there is no prior game
-                    pass
+                # "prior game/session" is always a slip — no prior game exists
+                # "pre-day chat" is always a slip — no such thing exists
+                # "earlier conversation" is always a slip
+                # "remember when" is always a slip
+                # (no round-gating needed for these — they are never valid)
                 slip = f"TEMPORAL SLIP by {player_name}: {description}"
                 detected.append(slip)
                 self.slips.setdefault(player_name, []).append(slip)

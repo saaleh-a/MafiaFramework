@@ -259,7 +259,7 @@ CORPORATE_WORDS: list[str] = [
 
 CORPORATE_PENALTY: str = (
     "CORPORATE-SPEAK PENALTY (you sound like you're in a Teams meeting):\n"
-    "These words are BANNED in your ACTION output. Using more than two of them "
+    "These words are BANNED in your ACTION output. Using three or more of them "
     "in a single message means you have failed at sounding human:\n"
     f"  {', '.join(CORPORATE_WORDS)}\n"
     "\n"
