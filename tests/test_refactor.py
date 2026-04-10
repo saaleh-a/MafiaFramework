@@ -792,7 +792,7 @@ class TestDiscussionNoVoteFormat(unittest.TestCase):
         from prompts.builder import build_mafia_prompt
         prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
         self.assertIn("STRICTLY BANNED during discussion", prompt)
-        self.assertIn("I\\'m voting X", prompt)
+        self.assertIn("I'm voting X", prompt)
 
     def test_detective_prompt_bans_vote_in_discussion(self):
         from prompts.builder import build_detective_prompt

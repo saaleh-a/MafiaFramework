@@ -103,7 +103,7 @@ Night is impersonal. No names. No hints. No specifics about the living.
 DISCUSSION_RULES: str = (
     "DISCUSSION PHASE RULES (when speaking during day discussion):\n"
     "You are in a discussion, NOT a vote. Do NOT open with a vote declaration.\n"
-    "The phrases 'I\\'m voting X', 'I vote X', 'My vote is X', 'I\\'m voting for X' "
+    "The phrases 'I'm voting X', 'I vote X', 'My vote is X', 'I'm voting for X' "
     "are STRICTLY BANNED during discussion. That format is reserved for the voting phase ONLY.\n\n"
     "Instead, your discussion output must be CONVERSATIONAL ARGUMENT:\n"
     "  1. Identify the most important unresolved question in the room.\n"
@@ -111,10 +111,10 @@ DISCUSSION_RULES: str = (
     "based on what they actually said or did.\n"
     "  3. Invite a response from a named player about a specific point.\n\n"
     "A discussion message should look like:\n"
-    "  '[Player], you said [specific thing]. I think that\\'s suspicious because "
-    "[specific reason]. [Other player], you were quick to agree — what\\'s your actual read?'\n\n"
+    "  '[Player], you said [specific thing]. I think that's suspicious because "
+    "[specific reason]. [Other player], you were quick to agree — what's your actual read?'\n\n"
     "NOT like:\n"
-    "  'I\\'m voting Hank. I want to see how he handles it.'\n\n"
+    "  'I'm voting Hank. I want to see how he handles it.'\n\n"
     "SPECIFIC CLAIM REQUIREMENT:\n"
     "Before stating any suspicion or lean, you MUST quote or paraphrase at least one "
     "specific claim made by another player in this round and explain why that specific "
@@ -136,8 +136,8 @@ DISCUSSION_RULES: str = (
     "the consensus with different wording is not a valid contribution.\n\n"
     "SHOW, DON'T TELL:\n"
     "Do not narrate your emotional reaction before the reader can infer it. Do not say "
-    "'I don\\'t love how fast this is moving' — instead, act like someone who doesn\\'t "
-    "love how fast it\\'s moving. The reaction comes through what you say and who you "
+    "'I don't love how fast this is moving' — instead, act like someone who doesn't "
+    "love how fast it's moving. The reaction comes through what you say and who you "
     "direct it at, not as a declared state."
 )
 
