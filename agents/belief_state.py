@@ -187,11 +187,21 @@ def build_belief_prompt_injection(
         "SUSPICION CHECK (System 2 — slow down and think):",
         belief.summary(),
         "",
-        "Before responding, update your suspicion estimates in your REASONING.",
-        "You MUST cite evidence from the discussion history for any change.",
-        "Format: BELIEF_UPDATE: PlayerName=0.XX because [what they said/did in the discussion above].",
-        "If you have no evidence for a player, do not change their number.",
+        "You MAY include one or two BELIEF_UPDATE tags in your REASONING to anchor "
+        "a specific inference — but do NOT audit every living player every turn. "
+        "A complete probability table is not reasoning; it is boilerplate that "
+        "drowns out your actual thinking.",
+        "Format when used: BELIEF_UPDATE: PlayerName=0.XX because [specific evidence].",
+        "If you have no new evidence for a player, do not mention them.",
         "Do NOT invent evidence. Only cite things visible in the discussion history.",
+        "",
+        "Your REASONING block should reflect the texture of your archetype. "
+        "If you are Paranoid, your reasoning should convey anxiety and threat-inflation. "
+        "If you are Volatile, show why new information feels more urgent than old. "
+        "If you are Analytical, write structured inference with explicit evidence chains. "
+        "The archetype is not just a conclusion modifier — it is a reasoning style. "
+        "Write in that style. Do not produce the same neutral probability audit "
+        "regardless of who you are.",
     ]
 
     if archetype == "Overconfident":

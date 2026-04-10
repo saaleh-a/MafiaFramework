@@ -317,9 +317,12 @@ class MafiaGameOrchestrator:
                 eligible = [p for p in alive if p != name]
                 if eligible:
                     vote_target = random.choice(eligible)
+                    # Include raw text so failures are diagnosable
+                    raw_preview = action[:200].replace("\n", " ")
                     print(
                         f"  [!] {name}'s vote was unparseable; "
-                        f"random fallback -> {vote_target}",
+                        f"random fallback -> {vote_target}\n"
+                        f"      Raw action text: \"{raw_preview}\"",
                         file=sys.stderr,
                     )
             if vote_target:

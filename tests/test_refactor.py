@@ -7,6 +7,11 @@ Tests cover:
   3. Role-Personality exclusion (TheParasite/ThePerformer blocked for Detective/Doctor)
   4. Robust action splitting (REASONING: stripped from ACTION block)
   5. Ghost filtering (dead players excluded from mention counts)
+  6. Archetype-Personality exclusion (banned combinations)
+  7. Parser fix: REASONING-only response returns empty action
+  8. Recency weighting in SummaryAgent current_target
+  9. Mafia prompt pre-reasoning questions
+  10. Belief state instruction update (sparse tags, archetype texture)
 """
 
 import re
@@ -16,10 +21,11 @@ import unittest
 # We import the actual production modules so the tests validate real behaviour.
 # ---------------------------------------------------------------------------
 from agents.base import parse_reasoning_action, _recursive_strip_marker
-from engine.game_state import GameState, PlayerState, GamePhase
+from engine.game_state import GameState, PlayerState, GamePhase, LogEntry
 from engine.game_manager import (
     _pick_personality_constrained,
     PERSONALITY_EXCLUSIONS,
+    ARCHETYPE_PERSONALITY_EXCLUSIONS,
     _PERSONALITY_FREQUENCY_CAP,
 )
 
@@ -312,6 +318,224 @@ class TestGhostFiltering(unittest.TestCase):
         summary = gs.get_public_state_summary()
         self.assertNotIn("Detective", summary)
         self.assertIn("Mafia", summary)  # Bob's revealed role
+
+
+# ===========================================================================
+#  6. Archetype-Personality Exclusion (combination bans)
+# ===========================================================================
+
+class TestArchetypePersonalityExclusion(unittest.TestCase):
+    """Verify that banned archetype-personality combinations are never assigned."""
+
+    def test_passive_cannot_get_mythbuilder(self):
+        """Passive+MythBuilder is mechanically broken and must be banned."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Passive",
+            )
+            self.assertNotEqual(p, "MythBuilder")
+
+    def test_passive_cannot_get_theghost(self):
+        """Passive+TheGhost reinforces silence in both layers."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Passive",
+            )
+            self.assertNotEqual(p, "TheGhost")
+
+    def test_overconfident_cannot_get_theparasite(self):
+        """Overconfident+TheParasite is redundant."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Overconfident",
+            )
+            self.assertNotEqual(p, "TheParasite")
+
+    def test_stubborn_cannot_get_mythbuilder(self):
+        """Stubborn+MythBuilder reinforces anchoring."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Stubborn",
+            )
+            self.assertNotEqual(p, "MythBuilder")
+
+    def test_diplomatic_cannot_get_theconfessor(self):
+        """Diplomatic+TheConfessor reinforces softness."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Diplomatic",
+            )
+            self.assertNotEqual(p, "TheConfessor")
+
+    def test_non_excluded_archetype_allows_all(self):
+        """An archetype with no exclusions should allow every personality."""
+        seen: set[str] = set()
+        for _ in range(500):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Reactive",
+            )
+            seen.add(p)
+        # Reactive has no bans — should see MythBuilder, TheGhost, etc.
+        self.assertIn("MythBuilder", seen)
+        self.assertIn("TheGhost", seen)
+
+
+# ===========================================================================
+#  7. Parser Fix: REASONING-only response returns empty action
+# ===========================================================================
+
+class TestReasoningOnlyParser(unittest.TestCase):
+    """Verify that REASONING-only responses (no ACTION) return empty action."""
+
+    def test_reasoning_only_returns_empty_action(self):
+        """When response has REASONING: but no ACTION:, action must be empty."""
+        text = "REASONING: Bob=0.7 because he voted weird. Alice=0.3."
+        reasoning, action = parse_reasoning_action(text)
+        self.assertEqual(action, "")
+        self.assertIn("Bob", reasoning)
+
+    def test_reasoning_only_multiline(self):
+        text = (
+            "REASONING: I think Bob is suspicious.\n"
+            "BELIEF_UPDATE: Bob=0.7 because he was quiet.\n"
+            "BELIEF_UPDATE: Alice=0.3 because she defended him."
+        )
+        reasoning, action = parse_reasoning_action(text)
+        self.assertEqual(action, "")
+        self.assertIn("Bob", reasoning)
+
+    def test_plain_text_still_becomes_action(self):
+        """Text with no markers at all should still be treated as action."""
+        text = "I vote for Bob. He's suspicious."
+        reasoning, action = parse_reasoning_action(text)
+        self.assertEqual(reasoning, "")
+        self.assertEqual(action, text)
+
+    def test_reasoning_then_action_still_works(self):
+        """Normal REASONING: ... ACTION: ... flow must still work."""
+        text = "REASONING: thinking hard ACTION: I vote for Bob"
+        reasoning, action = parse_reasoning_action(text)
+        self.assertIn("thinking hard", reasoning)
+        self.assertEqual(action, "I vote for Bob")
+
+
+# ===========================================================================
+#  8. Recency Weighting in SummaryAgent
+# ===========================================================================
+
+class TestRecencyWeighting(unittest.TestCase):
+    """Verify that SummaryAgent current_target uses recency weighting."""
+
+    def _make_entry(self, agent_name: str, action: str, round_number: int):
+        return LogEntry(
+            phase=GamePhase.DAY_DISCUSSION,
+            round_number=round_number,
+            agent_name=agent_name,
+            role="Villager",
+            archetype="Methodical",
+            reasoning=None,
+            action=action,
+        )
+
+    def test_current_round_mentions_outweigh_old(self):
+        """Mentions in the current round should dominate over old ones."""
+        from agents.summary import SummaryAgent
+        sa = SummaryAgent()
+
+        entries = [
+            # Round 1: Bob is mentioned 5 times in accusatory context
+            self._make_entry("Alice", "I suspect Bob is mafia", 1),
+            self._make_entry("Charlie", "I vote Bob guilty", 1),
+            self._make_entry("Diana", "Bob is suspicious to me", 1),
+            self._make_entry("Eve", "I accuse Bob", 1),
+            self._make_entry("Frank", "I suspect Bob", 1),
+            # Round 3 (current): Charlie is mentioned 2 times
+            self._make_entry("Alice", "I suspect Charlie is mafia", 3),
+            self._make_entry("Diana", "I vote Charlie guilty", 3),
+        ]
+        alive = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank"]
+
+        result = sa._get_current_target(entries, alive, current_round=3)
+        # Charlie has 2 * 1.0 = 2.0 from current round
+        # Bob has 5 * 0.1 = 0.5 from 2 rounds ago
+        self.assertIn("Charlie", result)
+
+    def test_previous_round_half_weight(self):
+        """Mentions from the previous round carry 0.5 weight."""
+        from agents.summary import SummaryAgent
+        sa = SummaryAgent()
+
+        entries = [
+            # Round 2 (previous): Bob mentioned 3 times
+            self._make_entry("Alice", "I suspect Bob is mafia", 2),
+            self._make_entry("Charlie", "I vote Bob guilty", 2),
+            self._make_entry("Diana", "Bob is suspicious", 2),
+            # Round 3 (current): Charlie mentioned 1 time
+            self._make_entry("Eve", "I suspect Charlie is mafia", 3),
+        ]
+        alive = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+
+        result = sa._get_current_target(entries, alive, current_round=3)
+        # Bob: 3 * 0.5 = 1.5, Charlie: 1 * 1.0 = 1.0
+        self.assertIn("Bob", result)
+
+    def test_no_entries_returns_none(self):
+        from agents.summary import SummaryAgent
+        sa = SummaryAgent()
+        result = sa._get_current_target([], ["Alice", "Bob"], current_round=1)
+        self.assertIsNone(result)
+
+
+# ===========================================================================
+#  9. Mafia Prompt Contains Pre-Reasoning Questions
+# ===========================================================================
+
+class TestMafiaPromptQuestions(unittest.TestCase):
+    """Verify the Mafia builder injects the mandatory pre-reasoning questions."""
+
+    def test_mafia_prompt_has_threat_check(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst")
+        self.assertIn("AM I UNDER SUSPICION", prompt)
+        self.assertIn("IS Bob UNDER SUSPICION", prompt)
+        self.assertIn("BIGGEST THREAT TO MAFIA", prompt)
+        self.assertIn("COVER STORY STILL HOLDING", prompt)
+        self.assertIn("WHO WILL IDENTIFY ME", prompt)
+
+    def test_mafia_prompt_references_partner_in_solo_question(self):
+        from prompts.builder import build_mafia_prompt
+        prompt = build_mafia_prompt("Eve", "Frank", "Analytical", "TheMartyr")
+        self.assertIn("Frank has been eliminated", prompt)
+
+
+# ===========================================================================
+#  10. Belief State Instruction Demotes BELIEF_UPDATE
+# ===========================================================================
+
+class TestBeliefInstructionUpdate(unittest.TestCase):
+    """Verify the belief prompt now says MAY not MUST for BELIEF_UPDATE."""
+
+    def test_belief_injection_permits_sparse_tags(self):
+        from agents.belief_state import build_belief_prompt_injection, SuspicionState
+        belief = SuspicionState()
+        belief.initialize(["Bob", "Charlie"], num_mafia=1)
+        text = build_belief_prompt_injection(belief, "Paranoid")
+        self.assertIn("MAY include", text)
+        self.assertNotIn("You MUST cite evidence", text)
+
+    def test_belief_injection_mentions_archetype_texture(self):
+        from agents.belief_state import build_belief_prompt_injection, SuspicionState
+        belief = SuspicionState()
+        belief.initialize(["Bob"], num_mafia=1)
+        text = build_belief_prompt_injection(belief, "Analytical")
+        self.assertIn("archetype", text.lower())
+        self.assertIn("reasoning style", text.lower())
 
 
 if __name__ == "__main__":

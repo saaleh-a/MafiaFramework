@@ -62,7 +62,9 @@ class SummaryAgent:
             parts.append(f"• Recent elimination: {dead_info}")
 
         # Current target / main suspect
-        suspect_info = self._get_current_target(recent_entries, alive)
+        suspect_info = self._get_current_target(
+            recent_entries, alive, game_state.round_number,
+        )
         if suspect_info:
             parts.append(f"• Current target: {suspect_info}")
         else:
@@ -98,10 +100,17 @@ class SummaryAgent:
         return f"{name} ({player.role})"
 
     def _get_current_target(
-        self, entries: list[LogEntry], alive: list[str]
+        self, entries: list[LogEntry], alive: list[str],
+        current_round: int = 1,
     ) -> str | None:
         """
         Identify who is being targeted most in recent discussion.
+
+        Recency weighting: mentions in the current round carry full
+        weight (1.0), the previous round carries 0.5, and anything
+        older contributes 0.1.  This ensures the current_target field
+        reflects what the room is doing *right now* rather than
+        accumulating stale all-time counts.
 
         Ghost filtering: only count mentions of *alive* players.
         Dead players are excluded from the mention map so that
@@ -109,7 +118,7 @@ class SummaryAgent:
         "Current Target".
         """
         # Only track alive players — dead players are ghosts
-        mention_counts: dict[str, int] = {name: 0 for name in alive}
+        mention_scores: dict[str, float] = {name: 0.0 for name in alive}
         accusation_pattern = re.compile(
             r"\b(?:suspect|vote|accuse|suspicious|mafia|guilty)\b",
             re.IGNORECASE,
@@ -121,17 +130,27 @@ class SummaryAgent:
             action = entry.action or ""
             if not accusation_pattern.search(action):
                 continue
+
+            # Recency weight based on round distance
+            round_delta = current_round - entry.round_number
+            if round_delta <= 0:
+                weight = 1.0
+            elif round_delta == 1:
+                weight = 0.5
+            else:
+                weight = 0.1
+
             for name in alive:
                 if name in action and name != entry.agent_name:
-                    mention_counts[name] += 1
+                    mention_scores[name] += weight
 
-        if not any(mention_counts.values()):
+        if not any(mention_scores.values()):
             return None
 
-        top_target = max(mention_counts, key=lambda k: mention_counts[k])
-        count = mention_counts[top_target]
+        top_target = max(mention_scores, key=lambda k: mention_scores[k])
+        score = mention_scores[top_target]
 
-        return f"{top_target} (mentioned suspiciously {count} time(s))"
+        return f"{top_target} (weighted suspicion score: {score:.1f})"
 
     def _get_main_evidence(self, entries: list[LogEntry]) -> str | None:
         """Extract the strongest piece of evidence from recent discussion."""

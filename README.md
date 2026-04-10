@@ -1,6 +1,6 @@
 # MafiaFramework
 
-An AI-powered simulation of the social deduction game **Mafia**, built on the [Microsoft Agent Framework (MAF)](https://github.com/microsoft/agent-framework) and [Azure AI Foundry](https://azure.microsoft.com/products/ai-studio). Eleven AI agents — each with a unique personality archetype, randomly assigned role, and independently chosen language model — play a full game of Mafia against each other in the terminal.
+An AI-powered simulation of the social deduction game **Mafia**, built on the [Microsoft Agent Framework (MAF)](https://github.com/microsoft/agent-framework) and [Azure AI Foundry](https://azure.microsoft.com/products/ai-studio). Eleven AI agents — each with a unique archetype, personality, randomly assigned role, and independently chosen language model — play a full game of Mafia against each other in the terminal.
 
 ---
 
@@ -10,27 +10,32 @@ An AI-powered simulation of the social deduction game **Mafia**, built on the [M
 - [How the Game Works](#how-the-game-works)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
+- [Archetypes](#archetypes)
+- [Personalities](#personalities)
+- [Combination Constraints](#combination-constraints)
+- [Agent Intelligence Systems](#agent-intelligence-systems)
+- [Prompt Engineering](#prompt-engineering)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
 - [Usage](#usage)
 - [Configuration](#configuration)
-- [Archetypes](#archetypes)
-- [Prompt Engineering](#prompt-engineering)
+- [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-MafiaFramework simulates full Mafia games where every participant is an LLM agent. Each game randomises three independent dimensions:
+MafiaFramework simulates full Mafia games where every participant is an LLM agent. Each game randomises four independent dimensions:
 
-| Dimension     | Description                                                        |
-|---------------|--------------------------------------------------------------------|
-| **Role**      | Mafia (×2), Detective, Doctor, Villager (×7) — shuffled each game  |
-| **Model**     | Each agent is backed by a randomly selected Azure model deployment |
-| **Archetype** | One of 13 personality archetypes that shape strategy and voice     |
+| Dimension       | Description                                                            |
+|-----------------|------------------------------------------------------------------------|
+| **Role**        | Mafia (×2), Detective, Doctor, Villager (×7) — shuffled each game      |
+| **Model**       | Each agent is backed by a randomly selected Azure model deployment     |
+| **Archetype**   | One of 13 strategy archetypes that shape how the agent reasons         |
+| **Personality** | One of 8 performance personalities that shape how the agent communicates|
 
-The same player name gets a different combination every game, producing emergent and unpredictable social dynamics.
+The same player name gets a different combination every game, producing emergent and unpredictable social dynamics. An exclusion system prevents mechanically broken archetype–personality combinations from being assigned.
 
 ---
 
@@ -40,19 +45,36 @@ A standard Mafia game loop runs as follows:
 
 ### Day Phase
 1. **Discussion** — All alive players speak (two rounds of shuffled speaking order). Each agent sees the public game state and the conversation so far.
-2. **Voting** — Each player votes to eliminate one other player. A simple plurality eliminates the target; ties result in no elimination.
+2. **Voting** — Each player votes to eliminate one other player. A simple plurality eliminates the target.
+
+#### Tie-Break Protocol
+When votes tie, a two-stage tie-break fires:
+1. **Defence** — Tied players speak in their own defence.
+2. **Decisive Vote** — All non-tied players re-vote on only the tied candidates.
+
+If the re-vote also ties, no one is eliminated that round.
+
+#### Vote Parsing
+The vote parser uses a three-tier intent system:
+1. Explicit `VOTE:` tags
+2. Intent phrases ("I'm voting for…", "staying on…", "locking in on…")
+3. Last-mentioned valid player name
+
+Self-votes are always rejected. When parsing fails entirely, a random eligible target is assigned as a fallback — the log includes the raw unparsed text for diagnosability.
 
 ### Night Phase
-3. **Mafia Kill** — The two Mafia agents independently choose a kill target. The second Mafia member sees the first's preference as a coordination hint.
+3. **Mafia Kill** — The two Mafia agents independently choose a kill target. The second Mafia member sees the first's preference as a coordination hint. Each receives their partner's reasoning from the previous night via the Syndicate Channel.
 4. **Detective Investigation** — The Detective chooses one player to investigate, learning whether they are Mafia or Innocent.
 5. **Doctor Protection** — The Doctor chooses one player to protect (cannot repeat the same player two nights in a row). If the Mafia's target matches the Doctor's protection, the kill is blocked.
 6. **Dawn** — Night actions resolve. The Narrator announces the result.
+
+Night actions execute in fixed order: Mafia → Detective → Doctor.
 
 ### Win Conditions
 - **Town wins** when all Mafia members are eliminated.
 - **Mafia wins** when Mafia members equal or outnumber Town players.
 
-An impartial **Narrator** agent (with omniscient knowledge of all roles) announces phase transitions dramatically without leaking hidden information.
+An impartial **Narrator** agent (with omniscient knowledge of all roles) announces phase transitions dramatically without leaking hidden information. The Night Anonymity Rule prevents the Narrator from naming any living player during night announcements.
 
 ---
 
@@ -66,21 +88,26 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
                        │
          ┌─────────────▼─────────────┐
          │   engine/game_manager.py  │
-         │   Role/Model/Archetype    │
-         │   randomisation & setup   │
+         │   Role/Model/Archetype/   │
+         │   Personality assignment   │
+         │   + exclusion constraints  │
          └─────────────┬─────────────┘
                        │
          ┌─────────────▼─────────────┐
          │  engine/orchestrator.py   │
          │  Game loop: day/night     │
-         │  phases, win detection    │
+         │  phases, belief tracking, │
+         │  win detection            │
          └──┬──────────┬─────────┬───┘
             │          │         │
     ┌───────▼──┐ ┌─────▼───┐ ┌──▼────────┐
     │  agents/ │ │ engine/ │ │  prompts/ │
     │ Per-role │ │ State,  │ │ Frameworks│
     │ AI agent │ │ logging │ │ Archetypes│
-    │ classes  │ │ display │ │ Builder   │
+    │ classes, │ │ display │ │ Personal. │
+    │ belief,  │ │         │ │ Builder   │
+    │ memory,  │ │         │ │           │
+    │ tools    │ │         │ │           │
     └──────────┘ └─────────┘ └───────────┘
             │
     ┌───────▼──────────┐
@@ -95,21 +122,28 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
 | Module                       | Purpose                                                                                      |
 |------------------------------|----------------------------------------------------------------------------------------------|
 | `main.py`                    | Entry point. Parses CLI args, validates environment, runs one or more games.                  |
-| `engine/orchestrator.py`     | Game loop — runs day discussion, voting, night actions, and win-condition checks.             |
-| `engine/game_manager.py`     | Randomises roles, models, and archetypes. Instantiates all agents and builds game state.     |
+| `engine/orchestrator.py`     | Game loop — runs day discussion, voting (with tie-break), night actions, belief tracking, and win-condition checks. |
+| `engine/game_manager.py`     | Randomises roles, models, archetypes, and personalities. Enforces exclusion constraints. Instantiates all agents. |
 | `engine/game_state.py`       | Core data model: player state, phase tracking, vote tallying, night action resolution.       |
 | `engine/game_log.py`         | Terminal renderer with ANSI colours — banners, agent action boxes, vote tallies, results.    |
-| `agents/base.py`             | Shared utilities: response parsing (`REASONING:`/`ACTION:`) and streaming with error handling.|
+| `agents/base.py`             | Shared utilities: response parsing (`REASONING:`/`ACTION:`), streaming, retry logic, corporate-speak enforcement. |
+| `agents/belief_state.py`     | Suspicion tracking per agent, overconfidence gating, staleness detection, BeliefGraph scum-tell detection, temporal consistency checking. |
+| `agents/summary.py`          | SummaryAgent — generates low-cognitive-load narrative summaries with recency-weighted target identification. |
+| `agents/providers.py`        | MAF ContextProviders — `BeliefStateProvider` and `CrossGameMemoryProvider` inject dynamic context into each agent call. |
+| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` enforces slang over boardroom vocabulary.       |
+| `agents/game_tools.py`       | MAF `@tool`-decorated functions — `cast_vote` and `choose_target` for structured game actions. |
+| `agents/memory.py`           | Persistent cross-game memory — role-aware learnings stored as JSON, loaded each game.        |
 | `agents/narrator.py`         | Narrator agent — omniscient, impartial game master announcements.                            |
-| `agents/mafia.py`            | Mafia agent — day discussion, voting, and night kill target selection.                       |
-| `agents/detective.py`        | Detective agent — day discussion, voting, and night investigation.                           |
-| `agents/doctor.py`           | Doctor agent — day discussion, voting, and night protection.                                 |
-| `agents/villager.py`         | Villager agent — day discussion and voting (no special night ability).                       |
+| `agents/mafia.py`            | Mafia agent — day discussion, voting, night kill target, Syndicate coordination.             |
+| `agents/detective.py`        | Detective agent — day discussion, voting, night investigation, Iroh Protocol reveal.         |
+| `agents/doctor.py`           | Doctor agent — day discussion, voting, night protection, Value-Protection Heuristic.         |
+| `agents/villager.py`         | Villager agent — day discussion, voting, Voter Consistency tracking.                         |
 | `config/model_registry.py`   | Model pool definition and Azure Foundry client factory.                                      |
 | `config/settings.py`         | Loads environment variables for the Foundry endpoint and default model.                      |
-| `prompts/builder.py`         | Assembles system prompts from role goals, frameworks, archetype modifiers, and voice profiles.|
-| `prompts/frameworks.py`      | Reusable reasoning frameworks: game theory, Sun Tzu, Machiavelli, Carnegie, behavioural psych.|
-| `prompts/archetypes.py`      | 13 personality archetypes with strategy modifiers and distinctive voice profiles.             |
+| `prompts/builder.py`         | Assembles system prompts from role goals, frameworks, archetype modifiers, personality blocks, and mandatory role-specific protocols. |
+| `prompts/frameworks.py`      | Reusable reasoning frameworks: game theory, Sun Tzu, Machiavelli, Carnegie, behavioural psych, strategic glossary, incentive reasoning, self-critique. |
+| `prompts/archetypes.py`      | 13 strategy archetypes, anti-AI-writing constraints, GenZ/MLE slang register, corporate-speak penalty, conversational rules. |
+| `prompts/personalities.py`   | 8 performance personalities with register, prohibited phrases, example dialogue, and role-aware behaviour notes. |
 | `check.py`                   | Pre-flight connectivity check — verifies Azure Foundry setup before running a game.          |
 
 ---
@@ -123,7 +157,13 @@ MafiaFramework/
 ├── requirements.txt            # Python dependencies
 ├── agents/
 │   ├── __init__.py
-│   ├── base.py                 # Shared streaming + parsing utilities
+│   ├── base.py                 # Shared streaming + parsing + retry utilities
+│   ├── belief_state.py         # Suspicion tracking, BeliefGraph, temporal checks
+│   ├── summary.py              # SummaryAgent — narrative summaries per phase
+│   ├── providers.py            # MAF ContextProviders (belief + memory injection)
+│   ├── middleware.py           # Corporate-speak enforcement middleware
+│   ├── game_tools.py           # @tool-decorated game actions (vote, target)
+│   ├── memory.py               # Cross-game persistent memory
 │   ├── narrator.py             # Narrator agent
 │   ├── mafia.py                # Mafia agent
 │   ├── detective.py            # Detective agent
@@ -131,7 +171,7 @@ MafiaFramework/
 │   └── villager.py             # Villager agent
 ├── engine/
 │   ├── __init__.py
-│   ├── game_manager.py         # Game setup & randomisation
+│   ├── game_manager.py         # Game setup, randomisation, exclusion constraints
 │   ├── game_state.py           # State model & game logic
 │   ├── orchestrator.py         # Game loop controller
 │   └── game_log.py             # Terminal display / ANSI rendering
@@ -139,12 +179,234 @@ MafiaFramework/
 │   ├── __init__.py
 │   ├── settings.py             # Environment variable loader
 │   └── model_registry.py       # Model pool & client factory
-└── prompts/
-    ├── __init__.py
-    ├── builder.py              # System prompt assembler
-    ├── frameworks.py           # Reasoning framework text blocks
-    └── archetypes.py           # Personality archetype definitions
+├── prompts/
+│   ├── __init__.py
+│   ├── builder.py              # System prompt assembler
+│   ├── frameworks.py           # Reasoning framework text blocks
+│   ├── archetypes.py           # Strategy archetype definitions + voice rules
+│   └── personalities.py        # Performance personality definitions
+├── tests/
+│   ├── __init__.py
+│   └── test_refactor.py        # 43 tests across 10 test classes
+└── memory/                     # Cross-game learnings (gitignored)
 ```
+
+---
+
+## Archetypes
+
+Each player is assigned a random **archetype** that governs how the agent reasons and makes decisions internally. There are 13 archetypes defined in `prompts/archetypes.py`:
+
+| Archetype       | Strategy Tendency                                                       | Availability   |
+|-----------------|-------------------------------------------------------------------------|----------------|
+| **Paranoid**    | Perceives threats at twice the actual level; occasional panic spirals    | All roles      |
+| **Overconfident** | First read is final; rarely updates on new information               | All roles      |
+| **Impulsive**   | Acts on first instinct; occasionally brilliant, often premature         | All roles      |
+| **Passive**     | Requires overwhelming evidence; acts a round later than optimal          | All roles      |
+| **Reactive**    | Accusations override strategic calculation; easy to bait                 | All roles      |
+| **Contrarian**  | Instinctively questions strong consensus, even when correct              | All roles      |
+| **Analytical**  | Closest to optimal play; failure mode is predictability                  | Non-Villager   |
+| **Methodical**  | Evidence-based but slow; anchors on early reads                          | Villager only  |
+| **Diplomatic**  | Prioritises group harmony; softens accusations into suggestions          | All roles      |
+| **Stubborn**    | Round-one read is load-bearing; treats counter-evidence as misdirection  | All roles      |
+| **Volatile**    | Position shifts with the last compelling thing heard; chaos agent         | All roles      |
+| **Manipulative**| Engineers group conclusions through leading questions                     | All roles      |
+| **Charming**    | Builds specific, genuine-seeming warmth rapidly                          | All roles      |
+
+Each archetype includes:
+- A **strategy modifier** that changes how the agent deviates from optimal play
+- A **voice profile** with register description, prohibited AI-writing patterns, and example phrases
+- An **IRRATIONAL ACTOR** tendency on some archetypes (Paranoid, Impulsive, Volatile, Contrarian) that produces unpredictable, human-like chaos
+
+The same archetype on different roles produces completely different gameplay. A Paranoid Mafia member behaves very differently from a Paranoid Villager.
+
+---
+
+## Personalities
+
+Each player also receives a **personality** — a performance layer that governs how the agent communicates externally, independent of its strategic archetype. There are 8 personalities defined in `prompts/personalities.py`:
+
+| Personality       | Communication Style                                                      |
+|-------------------|--------------------------------------------------------------------------|
+| **TheGhost**      | Minimal output. Short declaratives. Speaks last and least, lands hardest.|
+| **TheAnalyst**    | Full sentences with count framing. Escalates from measured to exasperated.|
+| **TheConfessor**  | High velocity ADHD energy. Bold declarations, partial walk-backs.        |
+| **TheParasite**   | Conversational, agrees readily, claims credit for others' reads.         |
+| **TheMartyr**     | Deliberate, slightly formal. Performed acceptance of elimination.        |
+| **ThePerformer**  | Fully in-character. Refuses to break frame. Non-sequiturs with conviction.|
+| **VibesVoter**    | Casual, intuitive. Speaks in emotional impressions, not logic chains.    |
+| **MythBuilder**   | Dramatic but grounded. Narrative framing. Treats the game as a story.    |
+
+Each personality includes:
+- A **register** defining energy, cadence, and sentence rhythm
+- **Prohibited phrases** that this voice must never produce
+- **Example dialogue** (5 lines) showing the voice in practice
+- **When accused** responses (3 lines) for when directly targeted
+- A **late game shift** describing how behaviour changes in rounds 3+
+- **Role notes** explaining Mafia vs Town differences
+- **Performance notes** on how the personality wraps the archetype's strategy
+
+**Demo mode** (`--demo`) restricts personalities to a safe subset: TheGhost, TheAnalyst, TheConfessor, TheMartyr.
+
+---
+
+## Combination Constraints
+
+Good archetype–personality combinations create contrast between the internal reasoning layer (archetype) and the external presentation layer (personality). Bad combinations reinforce the same tendency twice, producing agents with no distinct voice and no interesting failure mode.
+
+### Role–Personality Exclusions
+
+Strategic roles must not be undermined by performance-first personalities:
+
+| Role      | Banned Personalities               |
+|-----------|------------------------------------|
+| Detective | TheParasite, ThePerformer          |
+| Doctor    | TheParasite, ThePerformer          |
+
+### Archetype–Personality Exclusions
+
+| Archetype     | Banned Personalities | Reason                                        |
+|---------------|----------------------|-----------------------------------------------|
+| Passive       | MythBuilder, TheGhost| Reasoning without decisions / double silence   |
+| Overconfident | TheParasite          | Redundant lock-on without internal contrast    |
+| Stubborn      | MythBuilder          | Debate-proof anchoring with narrative cover    |
+| Diplomatic    | TheConfessor         | Double softness — agent becomes invisible      |
+
+### Frequency Cap
+
+No personality may appear more than **2 times** per game, preventing homogeneous rooms.
+
+### Soft Warnings
+
+If 3 or more players receive the **Analytical** archetype in the same game, a warning fires suggesting a re-roll (convergent reasoning risk). This is advisory — it does not force a re-roll.
+
+### Combinations to Monitor (Not Banned)
+
+| Combination           | Effect                                                                     |
+|-----------------------|----------------------------------------------------------------------------|
+| Volatile + Detective  | Highest-drama combo — Detective reveals immediately, likely dies next night |
+| Manipulative + Mafia  | Significantly increases Mafia win probability                              |
+| Reactive + Mafia      | Self-destructive — agent gets louder under pressure, self-exposes           |
+
+---
+
+## Agent Intelligence Systems
+
+### Belief State Tracking
+
+Each agent maintains private suspicion levels (0.0–1.0) for every other player via `SuspicionState`. This is structured intuition — the LLM assigns numbers based on conversational evidence. Agents may include sparse `BELIEF_UPDATE` tags in their reasoning to anchor specific inferences, but are not required to audit every player every turn. The system parses whatever tags are present.
+
+Agents are instructed to write reasoning that reflects their **archetype's texture** — a Paranoid agent's reasoning should convey anxiety, an Analytical agent should produce structured inference chains, a Volatile agent should show why new information feels more urgent than old.
+
+### Staleness Detection
+
+After 2 consecutive rounds with less than 0.05 total belief change, a **FRUSTRATION STATE** fires, forcing the agent to break out of its reasoning loop by naming a new suspect, challenging a quiet player, or sharing held-back information.
+
+### Overconfidence Gating
+
+When an Overconfident agent's top suspect is below 70% certainty, declarative accusations are gated — the agent must hedge until certainty rises.
+
+### Scum-Tell Detection (BeliefGraph)
+
+Three behavioural pattern detectors run during each round:
+- **Late Bandwagon** — Joining a vote majority without new reasoning
+- **Redirect** — Deflecting from the consensus target onto a quiet player
+- **Instahammer** — Casting a decisive vote immediately without discussion
+
+Detected patterns are surfaced in each agent's context so they can reason about them.
+
+### Temporal Consistency Checking
+
+Agents that reference impossible temporal events ("yesterday", "pre-day chat", "earlier conversation" outside the history) are flagged. These slips are injected into other agents' context as potential confabulation markers.
+
+### Recency-Weighted Target Identification
+
+The SummaryAgent shows a "current target" before each phase. Mention counts are weighted by recency:
+- **Current round**: weight 1.0
+- **Previous round**: weight 0.5
+- **Older**: weight 0.1
+
+This prevents stale all-time mention counts from misleading the room.
+
+### Cross-Game Persistent Memory
+
+Agents accumulate learnings across games via `GameMemoryStore`. Role-aware insights (patterns, strategies, correct/incorrect reads) are stored as JSON in the `memory/` directory and loaded at the start of each new game. This gives agents genuine cross-game improvement — a Detective who learned a useful pattern carries it forward.
+
+### Context Providers
+
+Two MAF-native `ContextProvider` classes inject dynamic per-turn context:
+- **BeliefStateProvider** — Injects suspicion state, frustration warnings, overconfidence gates, scum-tell flags, temporal slip alerts, and Iroh Protocol reveal instructions.
+- **CrossGameMemoryProvider** — Injects relevant learnings from previous games.
+
+### Tools and Middleware
+
+Agents use MAF-native structured actions:
+- `cast_vote` — Submit a vote during day phase
+- `choose_target` — Select a target during night phase
+
+The `corporate_speak_middleware` enforces conversational language — if an agent's action contains 3+ corporate/boardroom words, the response is re-invoked with a slang enforcement hint.
+
+### Iroh Protocol
+
+When other agents' collective suspicion of a Detective or Doctor exceeds the self-preservation threshold (0.45), the system instructs them to reveal their role to survive. A dead Detective/Doctor helps nobody.
+
+---
+
+## Prompt Engineering
+
+Agent prompts are assembled in `prompts/builder.py` from layered components:
+
+1. **Role Goal** — What winning looks like for this specific role (first-person mandate)
+2. **Grounding Constraint** — Anti-confabulation rule preventing reference to events not in the discussion history
+3. **Conversational Rule** — 8 rules forcing genuine conversation: respond to the last speaker, use names + second person, make claims not just questions, no pile-on echoing, disagree out loud, move the conversation forward
+4. **Reasoning Frameworks** — Reusable strategic thinking modules:
+   - **Game Theory** — Threat ranking, information asymmetry, timing
+   - **Sun Tzu** — Deception, intelligence targeting, terrain awareness
+   - **Machiavelli** — Political operation, coalition building, appearance management
+   - **Carnegie (Execution)** — Social influence, indirect persuasion, challenge absorption
+   - **Carnegie (Villager)** — People-reading, trust through interaction, social consensus
+   - **Behavioural Psychology** — Cognitive biases, anchoring, loss aversion, narrative coherence
+   - **Strategic Glossary** — Competitive Mafia terms (Busing, Lynch-bait, Tunneling, Wagon-steering, Instahammer)
+   - **Incentive Reasoning** — Who benefits from each elimination?
+5. **Role-Specific Protocols** — Mandatory blocks that must not be removed:
+   - **Mafia**: Deception Layer, Syndicate Channel (partner coordination), Mafia Threat Check (4 mandatory pre-reasoning questions + solo 5th question)
+   - **Detective**: Claim Protocol (mandatory red-check announcement), Iroh Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
+   - **Doctor**: Value-Protection Heuristic (protect the information engine, not the loudest talker), Iroh Protocol
+   - **Villager**: Voter Consistency (anti-Mafia-Steering tool — track vote blocs, last-moment switches)
+   - **Narrator**: Night Anonymity Rule (no living player names during night)
+6. **Archetype Strategy Modifier** — Role-specific behavioural deviation
+7. **Voice / Personality Block** — Either the personality's register or the archetype's voice profile
+8. **Self-Critique** — Reflexion loop checking for tunneling, circular reasoning, and manipulation
+9. **Output Format** — `REASONING:` / `ACTION:` structure with self-vote prevention
+
+### Mafia Threat Check
+
+Mafia agents must answer four questions explicitly in their reasoning before engaging with the room on every turn:
+1. Am I personally under suspicion?
+2. Is my partner under suspicion?
+3. Who poses the greatest current threat to Mafia?
+4. Is my cover story still consistent?
+
+When the partner has been eliminated, a fifth question fires: which player is most likely to identify me, and what must happen this round to prevent that?
+
+### Framework Distribution by Role
+
+| Role       | Frameworks                                                        |
+|------------|-------------------------------------------------------------------|
+| **Mafia**  | Game Theory + Sun Tzu + Machiavelli + Carnegie Execution + Strategic Glossary + Incentive Reasoning |
+| **Detective** | Game Theory + Sun Tzu + Social Cover + Strategic Glossary + Incentive Reasoning |
+| **Doctor** | Game Theory + Sun Tzu + Strategic Glossary + Incentive Reasoning  |
+| **Villager** | Carnegie Villager + Behavioural Psychology + Strategic Glossary + Incentive Reasoning |
+
+All agents output in a structured `REASONING:` / `ACTION:` format. Reasoning represents internal thinking (including optional sparse `BELIEF_UPDATE` tags); only the action is visible to other agents.
+
+### Anti-AI Writing
+
+Every agent prompt includes:
+- **Negative Constraints** — 80+ banned AIism phrases from Wikipedia's "Signs of AI writing"
+- **Anti-AI Structure** — 11 structural rules (no rule of three, no trailing -ing clauses, no emoji, etc.)
+- **GenZ/MLE Slang Register** — Multicultural London English and Gen Z slang injected for texture
+- **Corporate-Speak Penalty** — 20 banned boardroom words with natural replacements
 
 ---
 
@@ -219,13 +481,14 @@ python main.py
 
 ### Command-line options
 
-| Flag              | Description                                          |
-|-------------------|------------------------------------------------------|
+| Flag              | Description                                                     |
+|-------------------|-----------------------------------------------------------------|
 | `--reveal-roles`  | Show all role assignments (including hidden roles) at the start |
-| `--debug`         | Show full agent reasoning without truncation         |
-| `--quiet`         | Show action lines only, hide reasoning               |
-| `--seed <int>`    | Set random seed for reproducible role/model/archetype assignment |
-| `--games <int>`   | Run multiple games and print aggregate win statistics |
+| `--debug`         | Show full agent reasoning without truncation                    |
+| `--quiet`         | Show action lines only, hide reasoning                          |
+| `--seed <int>`    | Set random seed for reproducible role/model/archetype/personality assignment |
+| `--games <int>`   | Run multiple games and print aggregate win statistics            |
+| `--demo`          | Restrict personalities to demo-safe subset (TheGhost, TheAnalyst, TheConfessor, TheMartyr) |
 
 ### Examples
 
@@ -241,20 +504,23 @@ python main.py --games 10 --seed 42
 
 # Minimal output - actions only
 python main.py --quiet
+
+# Demo mode with safe personality subset
+python main.py --demo
 ```
 
 ### Output Format
 
-Each agent's turn is displayed in a coloured box:
+Each agent's turn is displayed in a coloured box showing name, role, archetype, and personality:
 
 ```
-┌─ [Alice | Villager | Paranoid] ──────────────────┐
+┌─ [Alice | Villager | Paranoid | TheGhost] ───────┐
 │ REASONING:                                        │
 │   (internal thinking - hidden from other agents)  │
 │                                                    │
 │ ACTION:                                            │
 │   Something is wrong. Did anyone else notice that? │
-└──────────────────────────────────────────────────-─┘
+└───────────────────────────────────────────────────-┘
 ```
 
 Roles are colour-coded:
@@ -273,7 +539,6 @@ Roles are colour-coded:
 Edit `config/model_registry.py` to add or remove models from the pool. Each game randomly assigns one model per player from `AVAILABLE_MODELS`:
 
 ```python
-# Display names are derived automatically from the model_id via .upper().
 AVAILABLE_MODELS = [
     ModelConfig(name=_display_name(_primary_model), model_id=_primary_model, short="4om"),
 ]
@@ -304,56 +569,28 @@ The number of player names must match the number of roles.
 
 ---
 
-## Archetypes
+## Testing
 
-Each player is assigned a random personality archetype that shapes both their strategic behaviour and their speaking voice. There are 13 archetypes defined in `prompts/archetypes.py`:
+The test suite validates core game mechanics without requiring Azure credentials or model deployments.
 
-| Archetype       | Strategy Tendency                                                      | Availability   |
-|-----------------|------------------------------------------------------------------------|----------------|
-| **Paranoid**    | Perceives threats at twice the actual level                            | All roles      |
-| **Overconfident** | First read is final; rarely updates on new information              | All roles      |
-| **Impulsive**   | Acts on first instinct; occasionally brilliant, often premature       | All roles      |
-| **Passive**     | Requires overwhelming evidence; acts a round later than optimal        | All roles      |
-| **Reactive**    | Accusations override strategic calculation; easy to bait               | All roles      |
-| **Contrarian**  | Instinctively questions strong consensus, even when correct            | All roles      |
-| **Analytical**  | Closest to optimal play; failure mode is predictability                | Non-Villager   |
-| **Methodical**  | Evidence-based but slow; anchors on early reads                        | Villager only  |
-| **Diplomatic**  | Prioritises group harmony; softens accusations into suggestions        | All roles      |
-| **Stubborn**    | Round-one read is load-bearing; treats counter-evidence as misdirection| All roles      |
-| **Volatile**    | Position shifts with the last compelling thing heard                    | All roles      |
-| **Manipulative**| Engineers group conclusions through leading questions                   | All roles      |
-| **Charming**    | Builds specific, genuine-seeming warmth rapidly                        | All roles      |
+```bash
+python -m unittest tests.test_refactor -v
+```
 
-Each archetype includes:
-- A **strategy modifier** that changes how the agent deviates from optimal play
-- A **voice profile** with register description, prohibited AI-writing patterns, and example phrases
+**43 tests** across **10 test classes**:
 
-The same archetype on different roles produces completely different gameplay. A Paranoid Mafia member behaves very differently from a Paranoid Villager.
-
----
-
-## Prompt Engineering
-
-Agent prompts are assembled in `prompts/builder.py` from layered components:
-
-1. **Role Goal** — What winning looks like for this specific role
-2. **Reasoning Frameworks** — Reusable strategic thinking modules:
-   - **Game Theory** — Threat ranking, information asymmetry, timing
-   - **Sun Tzu** — Deception, intelligence targeting, terrain awareness
-   - **Machiavelli** — Political operation, coalition building, appearance management
-   - **Carnegie (Execution)** — Social influence, indirect persuasion, challenge absorption
-   - **Carnegie (Villager)** — People-reading, trust through interaction, social consensus
-   - **Behavioural Psychology** — Cognitive biases, anchoring, loss aversion, narrative coherence
-3. **Archetype Strategy Modifier** — Role-specific behavioural deviation
-4. **Voice Profile** — Anti-AI-writing constraints and distinctive speaking register
-
-Different roles receive different framework combinations:
-- **Mafia**: Game Theory + Sun Tzu + Machiavelli + Carnegie Execution
-- **Detective**: Game Theory + Sun Tzu + Social Cover
-- **Doctor**: Game Theory + Sun Tzu
-- **Villager**: Carnegie Villager + Behavioural Psychology
-
-All agents output in a structured `REASONING:` / `ACTION:` format. Reasoning represents internal thinking; only the action is visible to other agents.
+| Test Class                         | Tests | Coverage                                                              |
+|------------------------------------|-------|-----------------------------------------------------------------------|
+| `TestSelfVotePrevention`           | 7     | VOTE: tag, intent phrases, and last-mentioned-name self-votes blocked |
+| `TestTieBreakLogic`                | 5     | Tie detection, three-way tie, decisive voter filtering                |
+| `TestPersonalityExclusion`         | 5     | Role–personality exclusions, frequency cap, exhaustion error          |
+| `TestActionSplitting`              | 5     | REASONING/ACTION splitting, embedded marker stripping                 |
+| `TestGhostFiltering`              | 4     | Eliminated round tracking, public summary role hiding                 |
+| `TestArchetypePersonalityExclusion`| 6     | All 5 banned combinations enforced, non-excluded archetype allows all |
+| `TestReasoningOnlyParser`          | 4     | REASONING-only returns empty action, plain text still works           |
+| `TestRecencyWeighting`             | 3     | Current round outweighs old, previous round half weight               |
+| `TestMafiaPromptQuestions`         | 2     | Threat Check questions present, solo question references partner      |
+| `TestBeliefInstructionUpdate`      | 2     | "MAY" not "MUST" for BELIEF_UPDATE, archetype texture mentioned       |
 
 ---
 

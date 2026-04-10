@@ -208,6 +208,31 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
             "A unified kill is a strong kill. A split means the Town got into your head."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
+        # Mandatory Mafia pre-reasoning questions
+        (
+            f"MAFIA THREAT CHECK (answer these FIRST in every REASONING block, before anything else):\n"
+            f"You are Mafia. Before you engage with the room's discussion, you MUST "
+            f"answer these questions explicitly in your REASONING every single turn:\n\n"
+            f"  1. AM I UNDER SUSPICION? Has anyone named me, voted for me, or "
+            f"questioned me in the last round? If yes, what exactly did they say "
+            f"and how dangerous is it?\n"
+            f"  2. IS {partner} UNDER SUSPICION? Has anyone targeted my partner? "
+            f"Do I need to deflect attention away from them or let them take heat "
+            f"to protect myself?\n"
+            f"  3. WHO IS THE BIGGEST THREAT TO MAFIA? Which player is most likely "
+            f"to be the Detective, or is building the most compelling case against "
+            f"me or {partner}? This is my priority target.\n"
+            f"  4. IS MY COVER STORY STILL HOLDING? Is everything I have said and "
+            f"done so far still consistent? Has any new information created a "
+            f"contradiction I need to address?\n\n"
+            f"If {partner} has been eliminated, you MUST also answer:\n"
+            f"  5. WHO WILL IDENTIFY ME? Which specific player is most likely to "
+            f"correctly identify me as Mafia before the game ends? What must "
+            f"happen THIS ROUND to prevent that?\n\n"
+            f"Only after answering these questions should you engage with the room "
+            f"as a Town player would. These questions are not optional. They fire "
+            f"every turn."
+        ),
         voice,
         (
             "ALWAYS structure output as:\n"

@@ -116,7 +116,16 @@ def parse_reasoning_action(text: str) -> tuple[str, str]:
     """
     text = text.strip()
     if "ACTION:" not in text:
-        # Fallback: no marker - treat whole response as the action
+        # No ACTION: marker at all.
+        # If REASONING: is present, the model produced reasoning without
+        # a decision.  Treat this as a failed parse: return the reasoning
+        # content in the reasoning slot and an empty action so that the
+        # retry / fallback logic in the caller fires.
+        if re.search(r"REASONING:", text, re.IGNORECASE):
+            reasoning = re.sub(r"REASONING:", " ", text, flags=re.IGNORECASE)
+            reasoning = " ".join(reasoning.split())
+            return reasoning, ""
+        # Fallback: no markers at all — treat whole response as the action
         return "", text
 
     # Split on the LAST ACTION: marker
