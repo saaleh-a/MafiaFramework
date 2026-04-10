@@ -86,10 +86,26 @@ ARCHETYPE_PERSONALITY_EXCLUSIONS: dict[str, list[str]] = {
     "Overconfident": ["TheParasite"],
     "Stubborn":      ["MythBuilder"],
     "Diplomatic":    ["TheConfessor"],
+    "Manipulative":  ["ThePerformer"],
 }
 
 # No personality may appear more than this many times per game.
 _PERSONALITY_FREQUENCY_CAP = 2
+
+# Consensus-following personalities get a tighter cap: 1 per game.
+# These amplify or follow the room's existing direction rather than
+# generating independent analysis.
+CONSENSUS_PERSONALITIES: set[str] = {
+    "TheParasite", "TheConfessor", "ThePerformer", "MythBuilder",
+}
+_CONSENSUS_PERSONALITY_CAP = 1
+
+# Independent-reasoning archetypes — resist or challenge consensus by design.
+# At least this many players must be assigned from this group per game.
+INDEPENDENT_ARCHETYPES: set[str] = {
+    "Contrarian", "Analytical", "Impulsive", "Stubborn",
+}
+_MIN_INDEPENDENT_ARCHETYPES = 2
 
 
 def _pick_personality_constrained(
@@ -114,7 +130,10 @@ def _pick_personality_constrained(
     eligible = [
         p for p in pool
         if p not in excluded
-        and current_counts.get(p, 0) < _PERSONALITY_FREQUENCY_CAP
+        and current_counts.get(p, 0) < (
+            _CONSENSUS_PERSONALITY_CAP if p in CONSENSUS_PERSONALITIES
+            else _PERSONALITY_FREQUENCY_CAP
+        )
     ]
 
     if not eligible:
@@ -158,6 +177,29 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
             f"Consider re-rolling.",
             file=sys.stderr,
         )
+
+    # Enforce minimum independent-reasoning archetypes (re-roll if needed)
+    independent_count = sum(
+        1 for a in archetype_map.values() if a in INDEPENDENT_ARCHETYPES
+    )
+    if independent_count < _MIN_INDEPENDENT_ARCHETYPES:
+        # Pick random players who don't already have an independent archetype
+        # and re-roll them to an independent one
+        non_independent = [
+            n for n, a in archetype_map.items()
+            if a not in INDEPENDENT_ARCHETYPES
+        ]
+        random.shuffle(non_independent)
+        independent_pool = list(INDEPENDENT_ARCHETYPES)
+        for _ in range(_MIN_INDEPENDENT_ARCHETYPES - independent_count):
+            if not non_independent:
+                break
+            target = non_independent.pop()
+            role = role_map[target]
+            # Exclude Analytical from Villagers' independent archetype pool
+            pool = [a for a in independent_pool if not (role == "Villager" and a == "Analytical")]
+            if pool:
+                archetype_map[target] = random.choice(pool)
 
     # 3b. Assign random personality per player (with exclusion + frequency cap)
     personality_map: dict[str, str] = {}

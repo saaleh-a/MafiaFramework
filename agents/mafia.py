@@ -1,7 +1,7 @@
 from agents.base import run_agent_stream, format_discussion_prompt
-from agent_framework import Agent, SlidingWindowStrategy
+from agent_framework import Agent, InMemoryHistoryProvider, SlidingWindowStrategy
 from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
-from agents.middleware import corporate_speak_middleware
+from agents.middleware import corporate_speak_middleware, ReasoningActionMiddleware, BeliefUpdateMiddleware
 from agents.game_tools import cast_vote, choose_target
 from prompts.builder import build_mafia_prompt
 from engine.game_state import GameState
@@ -22,8 +22,8 @@ class MafiaAgent:
             name=name,
             description=f"[Mafia] [{archetype}] [{personality}]",
             instructions=build_mafia_prompt(name, partner_name, archetype, personality),
-            context_providers=[BeliefStateProvider(), CrossGameMemoryProvider()],
-            middleware=[corporate_speak_middleware],
+            context_providers=[BeliefStateProvider(), CrossGameMemoryProvider(), InMemoryHistoryProvider("history", load_messages=True)],
+            middleware=[corporate_speak_middleware, ReasoningActionMiddleware(), BeliefUpdateMiddleware()],
             tools=[cast_vote, choose_target],
             compaction_strategy=SlidingWindowStrategy(keep_last_groups=20),
         )
