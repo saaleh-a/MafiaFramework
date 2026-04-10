@@ -196,7 +196,7 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
                 break
             target = non_independent.pop()
             role = role_map[target]
-            # Villagers can't get Analytical (they get Methodical instead)
+            # Exclude Analytical from Villagers' independent archetype pool
             pool = [a for a in independent_pool if not (role == "Villager" and a == "Analytical")]
             if pool:
                 archetype_map[target] = random.choice(pool)

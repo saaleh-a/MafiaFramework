@@ -466,7 +466,7 @@ class TestRecencyWeighting(unittest.TestCase):
         # Bob has 5 * 0.1 = 0.5 from 2 rounds ago
         self.assertIn("Charlie", result)
 
-    def test_previous_round_reduced_weight(self):
+    def test_previous_round_point_three_weight(self):
         """Mentions from the previous round carry 0.3 weight."""
         from agents.summary import SummaryAgent
         sa = SummaryAgent()
