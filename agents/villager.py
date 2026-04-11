@@ -1,7 +1,7 @@
 from agents.base import run_agent_stream, format_discussion_prompt
 from agent_framework import Agent, InMemoryHistoryProvider, SlidingWindowStrategy
 from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
-from agents.middleware import corporate_speak_middleware, ReasoningActionMiddleware, BeliefUpdateMiddleware
+from agents.middleware import corporate_speak_middleware, ReasoningActionMiddleware, BeliefUpdateMiddleware, ResilientSessionMiddleware, RateLimitMiddleware
 from agents.game_tools import cast_vote
 from prompts.builder import build_villager_prompt
 from engine.game_state import GameState
@@ -20,7 +20,7 @@ class VillagerAgent:
             description=f"[Villager] [{archetype}] [{personality}]",
             instructions=build_villager_prompt(name, archetype, personality),
             context_providers=[BeliefStateProvider(), CrossGameMemoryProvider(), InMemoryHistoryProvider("history", load_messages=True)],
-            middleware=[corporate_speak_middleware, ReasoningActionMiddleware(), BeliefUpdateMiddleware()],
+            middleware=[ResilientSessionMiddleware(), RateLimitMiddleware(), corporate_speak_middleware, ReasoningActionMiddleware(), BeliefUpdateMiddleware()],
             tools=[cast_vote],
             compaction_strategy=SlidingWindowStrategy(keep_last_groups=20),
         )

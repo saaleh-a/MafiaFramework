@@ -46,3 +46,13 @@ MAFIA_BACKOFF_BASE_DELAY: float = _float_env("MAFIA_BACKOFF_BASE_DELAY", 1.0)
 MAFIA_ENABLE_STREAMING_FALLBACK: bool = (
     os.environ.get("MAFIA_ENABLE_STREAMING_FALLBACK", "").lower() in ("1", "true", "yes")
 )
+
+# ------------------------------------------------------------------ #
+#  Session resilience configuration                                    #
+# ------------------------------------------------------------------ #
+
+# Seconds of idle time before a session is proactively refreshed
+MAFIA_SESSION_IDLE_THRESHOLD: float = _float_env("MAFIA_SESSION_IDLE_THRESHOLD", 20.0)
+
+# If a rate-limit retry delay exceeds this, proactively refresh session
+MAFIA_SESSION_REFRESH_THRESHOLD: float = _float_env("MAFIA_SESSION_REFRESH_THRESHOLD", 25.0)
