@@ -265,6 +265,26 @@ Strategic roles must not be undermined by performance-first personalities:
 
 ### Archetype–Personality Exclusions
 
+Banned combinations are organised into tiers based on the severity of the failure mode.
+
+#### Tier 1: Structural Collapse (Hard Ban — All Roles)
+
+Combinations where the archetype's internal failure mode aligns with the personality's external communication prohibition, leaving no functional response mechanism.
+
+| Archetype | Banned Personalities | Reason                                                               |
+|-----------|----------------------|----------------------------------------------------------------------|
+| Reactive  | VibesVoter           | Panic state + no logic vocabulary → empty/one-word responses         |
+
+#### Tier 2: Absence of Self (Ban for Power Roles and Mafia)
+
+Combinations that remove independent judgment. Functional for Villager (following town is acceptable), but broken for roles requiring independent decisions or deception.
+
+| Archetype  | Banned Personalities | Banned Roles              | Reason                                                      |
+|------------|----------------------|---------------------------|-------------------------------------------------------------|
+| Diplomatic | TheParasite          | Detective, Doctor, Mafia  | No internal position + consensus mirroring → cannot decide or deceive |
+
+#### Tier 3: Existing Bans (Retained)
+
 | Archetype     | Banned Personalities | Reason                                        |
 |---------------|----------------------|-----------------------------------------------|
 | Passive       | MythBuilder, TheGhost| Reasoning without decisions / double silence   |
@@ -600,7 +620,7 @@ python -m unittest tests.test_refactor -v
 | `TestPersonalityExclusion`         | 5     | Role–personality exclusions, frequency cap, exhaustion error          |
 | `TestActionSplitting`              | 5     | REASONING/ACTION splitting, embedded marker stripping                 |
 | `TestGhostFiltering`              | 4     | Eliminated round tracking, public summary role hiding                 |
-| `TestArchetypePersonalityExclusion`| 6     | All 6 banned combinations enforced, non-excluded archetype allows all |
+| `TestArchetypePersonalityExclusion`| 7     | All banned combinations enforced incl. Reactive+VibesVoter, non-excluded archetype allows all |
 | `TestReasoningOnlyParser`          | 4     | REASONING-only returns empty action, plain text still works           |
 | `TestRecencyWeighting`             | 3     | Current round outweighs old, previous round 0.3 weight               |
 | `TestMafiaPromptQuestions`         | 2     | Threat Check questions present, solo question references partner      |
@@ -614,6 +634,8 @@ python -m unittest tests.test_refactor -v
 | `TestLoneDivergentVoteInstruction` | 2     | Lone divergent vote instruction in Villager and Detective prompts     |
 | `TestIndependentArchetypeFloor`    | 2     | Independent archetypes and consensus personalities defined correctly   |
 | `TestInMemoryHistoryProvider`      | 1     | InMemoryHistoryProvider importable and instantiable                    |
+| `TestAllCombinationBans`           | 3     | Tier 1/2/3 bans present in exclusion tables, Tier 2 role specificity  |
+| `TestDiplomaticParasiteTier2`      | 4     | Diplomatic+TheParasite blocked for Detective/Doctor/Mafia, allowed for Villager |
 
 ---
 
