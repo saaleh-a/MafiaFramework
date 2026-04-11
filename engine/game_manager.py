@@ -87,6 +87,20 @@ ARCHETYPE_PERSONALITY_EXCLUSIONS: dict[str, list[str]] = {
     "Stubborn":      ["MythBuilder"],
     "Diplomatic":    ["TheConfessor"],
     "Manipulative":  ["ThePerformer"],
+    "Reactive":      ["VibesVoter"],
+}
+
+# ------------------------------------------------------------------ #
+#  Role-specific archetype-personality exclusion table (Tier 2)        #
+# ------------------------------------------------------------------ #
+# Some archetype-personality combinations are only broken for specific
+# roles.  The combination removes the agent's ability to perform
+# role-critical actions (independent decisions, deception) but is
+# acceptable for roles that can follow consensus (Villager).
+#
+# Format: {(archetype, personality): set_of_banned_roles}
+ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS: dict[tuple[str, str], set[str]] = {
+    ("Diplomatic", "TheParasite"): {"Detective", "Doctor", "Mafia"},
 }
 
 # No personality may appear more than this many times per game.
@@ -118,7 +132,8 @@ def _pick_personality_constrained(
     Pick a personality that respects:
       1. The role-personality exclusion table.
       2. The archetype-personality exclusion table.
-      3. The per-game frequency cap.
+      3. The role-specific archetype-personality exclusion table (Tier 2).
+      4. The per-game frequency cap.
 
     Raises ValueError if no valid personality remains (should never
     happen with a reasonable pool / player count).
@@ -127,6 +142,11 @@ def _pick_personality_constrained(
 
     excluded = set(PERSONALITY_EXCLUSIONS.get(role, []))
     excluded |= set(ARCHETYPE_PERSONALITY_EXCLUSIONS.get(archetype, []))
+
+    # Tier 2: role-specific archetype-personality bans
+    for (arch, pers), banned_roles in ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS.items():
+        if archetype == arch and role in banned_roles:
+            excluded.add(pers)
     eligible = [
         p for p in pool
         if p not in excluded

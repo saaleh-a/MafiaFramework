@@ -372,16 +372,25 @@ class TestArchetypePersonalityExclusion(unittest.TestCase):
             )
             self.assertNotEqual(p, "TheConfessor")
 
+    def test_reactive_cannot_get_vibesvoter(self):
+        """Reactive+VibesVoter is structurally broken — panic with no vocabulary."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Reactive",
+            )
+            self.assertNotEqual(p, "VibesVoter")
+
     def test_non_excluded_archetype_allows_all(self):
         """An archetype with no exclusions should allow every personality."""
         seen: set[str] = set()
         for _ in range(500):
             counts: dict[str, int] = {}
             p = _pick_personality_constrained(
-                "Villager", counts, demo=False, archetype="Reactive",
+                "Villager", counts, demo=False, archetype="Paranoid",
             )
             seen.add(p)
-        # Reactive has no bans — should see MythBuilder, TheGhost, etc.
+        # Paranoid has no bans — should see MythBuilder, TheGhost, etc.
         self.assertIn("MythBuilder", seen)
         self.assertIn("TheGhost", seen)
 
