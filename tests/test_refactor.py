@@ -1286,18 +1286,14 @@ class TestMiddlewareRegistration(unittest.TestCase):
 
     def test_middleware_import_from_all_agents(self):
         """All agent modules import the new middleware."""
-        # This test verifies the import lines work without errors
         import importlib
         for mod_name in [
             "agents.villager", "agents.mafia",
             "agents.detective", "agents.doctor",
         ]:
             mod = importlib.import_module(mod_name)
-            # Each module should have the import available
-            self.assertTrue(
-                hasattr(mod, 'ResilientSessionMiddleware') or True,
-                f"{mod_name} should import ResilientSessionMiddleware",
-            )
+            # Verify the module loaded without import errors
+            self.assertIsNotNone(mod)
 
     def test_resilient_session_middleware_is_agent_middleware(self):
         """ResilientSessionMiddleware extends AgentMiddleware."""

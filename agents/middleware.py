@@ -362,7 +362,7 @@ class ResilientSessionMiddleware(AgentMiddleware):
     ) -> None:
         try:
             await call_next()
-        except (ChatClientException, Exception) as exc:
+        except Exception as exc:
             if not _is_session_expired_error(exc):
                 raise
 
@@ -472,7 +472,7 @@ class RateLimitMiddleware(AgentMiddleware):
                     SessionHealthMonitor.touch(context.session.session_id)
                 return
 
-            except (ChatClientException, Exception) as exc:
+            except Exception as exc:
                 if not _is_rate_limit_error(exc):
                     raise
 
