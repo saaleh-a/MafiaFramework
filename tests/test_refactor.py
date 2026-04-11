@@ -26,6 +26,7 @@ from engine.game_manager import (
     _pick_personality_constrained,
     PERSONALITY_EXCLUSIONS,
     ARCHETYPE_PERSONALITY_EXCLUSIONS,
+    ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS,
     _PERSONALITY_FREQUENCY_CAP,
 )
 
@@ -903,9 +904,9 @@ class TestContrarianResistance(unittest.TestCase):
 # ===========================================================================
 
 class TestAllCombinationBans(unittest.TestCase):
-    """Verify all 6 required combination bans are in the exclusion table."""
+    """Verify all required combination bans are in the exclusion tables."""
 
-    def test_all_required_bans_present(self):
+    def test_all_tier3_bans_present(self):
         from engine.game_manager import ARCHETYPE_PERSONALITY_EXCLUSIONS
         # Manipulative + ThePerformer
         self.assertIn("ThePerformer", ARCHETYPE_PERSONALITY_EXCLUSIONS["Manipulative"])
@@ -919,6 +920,22 @@ class TestAllCombinationBans(unittest.TestCase):
         self.assertIn("MythBuilder", ARCHETYPE_PERSONALITY_EXCLUSIONS["Stubborn"])
         # Diplomatic + TheConfessor
         self.assertIn("TheConfessor", ARCHETYPE_PERSONALITY_EXCLUSIONS["Diplomatic"])
+
+    def test_tier1_reactive_vibesvoter_ban(self):
+        """Reactive+VibesVoter hard-banned for all roles (Tier 1)."""
+        from engine.game_manager import ARCHETYPE_PERSONALITY_EXCLUSIONS
+        self.assertIn("VibesVoter", ARCHETYPE_PERSONALITY_EXCLUSIONS["Reactive"])
+
+    def test_tier2_diplomatic_parasite_ban(self):
+        """Diplomatic+TheParasite banned for Detective, Doctor, Mafia (Tier 2)."""
+        from engine.game_manager import ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS
+        key = ("Diplomatic", "TheParasite")
+        self.assertIn(key, ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS)
+        banned_roles = ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS[key]
+        self.assertIn("Detective", banned_roles)
+        self.assertIn("Doctor", banned_roles)
+        self.assertIn("Mafia", banned_roles)
+        self.assertNotIn("Villager", banned_roles)
 
 
 # ===========================================================================
@@ -1440,6 +1457,52 @@ class TestSuccessCriteria(unittest.TestCase):
         # Both have process method
         self.assertTrue(callable(getattr(ResilientSessionMiddleware, 'process', None)))
         self.assertTrue(callable(getattr(RateLimitMiddleware, 'process', None)))
+
+
+# ===========================================================================
+#  Tier 2: Diplomatic+TheParasite role-specific exclusion
+# ===========================================================================
+
+class TestDiplomaticParasiteTier2(unittest.TestCase):
+    """Diplomatic+TheParasite banned for power roles and Mafia, allowed for Villager."""
+
+    def test_banned_for_detective(self):
+        """Detective cannot receive TheParasite when archetype is Diplomatic."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Detective", counts, demo=False, archetype="Diplomatic",
+            )
+            self.assertNotEqual(p, "TheParasite")
+
+    def test_banned_for_doctor(self):
+        """Doctor cannot receive TheParasite when archetype is Diplomatic."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Doctor", counts, demo=False, archetype="Diplomatic",
+            )
+            self.assertNotEqual(p, "TheParasite")
+
+    def test_banned_for_mafia(self):
+        """Mafia cannot receive TheParasite when archetype is Diplomatic."""
+        for _ in range(200):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Mafia", counts, demo=False, archetype="Diplomatic",
+            )
+            self.assertNotEqual(p, "TheParasite")
+
+    def test_allowed_for_villager(self):
+        """Villager CAN receive TheParasite when archetype is Diplomatic."""
+        seen: set[str] = set()
+        for _ in range(500):
+            counts: dict[str, int] = {}
+            p = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Diplomatic",
+            )
+            seen.add(p)
+        self.assertIn("TheParasite", seen)
 
 
 if __name__ == "__main__":
