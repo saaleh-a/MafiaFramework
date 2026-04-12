@@ -51,8 +51,6 @@ from agent_framework import (
     AgentContext, AgentMiddleware, AgentResponse, AgentSession,
     InMemoryHistoryProvider, Message, agent_middleware,
 )
-from agent_framework.exceptions import ChatClientException
-
 # Import the canonical CORPORATE_WORDS from archetypes to avoid duplication.
 from prompts.archetypes import CORPORATE_WORDS
 
@@ -239,9 +237,18 @@ class SessionHealthMonitor:
 # ------------------------------------------------------------------ #
 
 def _is_session_expired_error(exc: Exception) -> bool:
-    """Return True if *exc* is a previous_response_not_found error."""
+    """Return True if *exc* is a previous_response_id not found error.
+
+    Azure returns the error as the string ``"previous_response_id not found"``
+    (with spaces and the word "id"). The underscore form
+    ``"previous_response_not_found"`` is kept for any SDK wrappers that
+    normalise the message.
+    """
     msg = str(exc).lower()
-    return "previous_response_not_found" in msg
+    return (
+        "previous_response_not_found" in msg
+        or ("previous_response" in msg and "not found" in msg)
+    )
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
@@ -333,6 +340,12 @@ def _refresh_session(
     return new_session
 
 
+# Maps old session_id → refreshed AgentSession after a recovery.
+# run_agent_stream pops entries here to propagate the new session back
+# to the agent wrapper so subsequent calls don't re-trigger recovery.
+_session_refresh_registry: dict[str, "AgentSession"] = {}
+
+
 # ------------------------------------------------------------------ #
 #  ResilientSessionMiddleware                                           #
 # ------------------------------------------------------------------ #
@@ -383,6 +396,11 @@ class ResilientSessionMiddleware(AgentMiddleware):
 
             # Update the context to use the new session
             context.session = new_session
+
+            # Register the replacement so run_agent_stream can update
+            # the agent wrapper's self.session after this call returns.
+            if session:
+                _session_refresh_registry[session.session_id] = new_session
 
             # Track the new session
             SessionHealthMonitor.touch(new_session.session_id)

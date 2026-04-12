@@ -29,17 +29,20 @@ class VillagerAgent:
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:
         """Belief/memory context is injected automatically by MAF ContextProviders."""
         discussion = format_discussion_prompt(history, self.name)
-        return await run_agent_stream(
+        reasoning, action, new_session = await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"{discussion}\n\n"
             f"Your turn. Max 80 words.",
             session=self.session,
         )
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
         targets = [p for p in game_state.get_alive_players() if p != self.name]
-        return await run_agent_stream(
+        reasoning, action, new_session = await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Full discussion:\n{chr(10).join(history)}\n\n"
@@ -48,3 +51,6 @@ class VillagerAgent:
             f"You MUST call the cast_vote tool OR write ACTION: VOTE: [exact name from valid targets]",
             session=self.session,
         )
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action
