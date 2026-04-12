@@ -1583,16 +1583,14 @@ class TestMAF10DependencyVersions(unittest.TestCase):
         """agent-framework-core must be >=1.0.0."""
         import importlib.metadata
         version_str = importlib.metadata.version("agent-framework-core")
-        parts = version_str.split(".")
-        major = int(parts[0])
+        major = int(re.findall(r"\d+", version_str)[0])
         self.assertGreaterEqual(major, 1, f"agent-framework-core {version_str} is pre-1.0")
 
     def test_foundry_version_is_stable(self):
         """agent-framework-foundry must be >=1.0.0."""
         import importlib.metadata
         version_str = importlib.metadata.version("agent-framework-foundry")
-        parts = version_str.split(".")
-        major = int(parts[0])
+        major = int(re.findall(r"\d+", version_str)[0])
         self.assertGreaterEqual(major, 1, f"agent-framework-foundry {version_str} is pre-1.0")
 
 

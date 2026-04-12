@@ -21,8 +21,10 @@ def _check_maf_version() -> bool:
     try:
         import importlib.metadata
         version_str = importlib.metadata.version("agent-framework-core")
-        parts = version_str.split(".")
-        version_tuple = tuple(int(p) for p in parts[:3])
+        # Extract numeric parts, ignoring pre-release suffixes like 'rc1'
+        import re
+        numeric_parts = re.findall(r"\d+", version_str)
+        version_tuple = tuple(int(p) for p in numeric_parts[:3])
         if version_tuple < _MIN_MAF_VERSION:
             print(
                 f"\033[91m✗ agent-framework-core {version_str} is too old. "
