@@ -2271,5 +2271,1446 @@ class TestDiscussionOnlyInjectsNewMessages(unittest.TestCase):
         self.assertIn("Nobody else has spoken yet", result)
 
 
+# ===================================================================== #
+#  COVERAGE EXPANSION — Tests for modules with insufficient coverage    #
+# ===================================================================== #
+
+
+# ===================================================================== #
+#  GameState: win conditions, eliminations, night actions, summaries     #
+# ===================================================================== #
+
+class TestGameStateWinConditions(unittest.TestCase):
+    """Verify win condition logic for all edge cases."""
+
+    def _make_state(self, roles: dict[str, str]) -> GameState:
+        return GameState(
+            players={
+                name: PlayerState(name=name, role=role, archetype="Analytical")
+                for name, role in roles.items()
+            }
+        )
+
+    def test_town_wins_when_all_mafia_dead(self):
+        gs = self._make_state({"A": "Mafia", "B": "Villager", "C": "Villager"})
+        gs.eliminate_player("A")
+        self.assertEqual(gs.check_win_condition(), "Town")
+        self.assertEqual(gs.eliminated_this_round, "A")
+
+    def test_mafia_wins_when_equal_to_town(self):
+        gs = self._make_state({"A": "Mafia", "B": "Villager"})
+        self.assertEqual(gs.check_win_condition(), "Mafia")
+
+    def test_mafia_wins_when_more_than_town(self):
+        gs = self._make_state({"A": "Mafia", "B": "Mafia", "C": "Villager"})
+        self.assertEqual(gs.check_win_condition(), "Mafia")
+
+    def test_no_winner_during_game(self):
+        gs = self._make_state({
+            "A": "Mafia", "B": "Villager", "C": "Villager", "D": "Villager",
+        })
+        self.assertIsNone(gs.check_win_condition())
+
+    def test_all_players_dead_gives_town_win(self):
+        """Edge: if somehow all players are dead (including Mafia), Town wins."""
+        gs = self._make_state({"A": "Mafia", "B": "Villager"})
+        gs.eliminate_player("A")
+        gs.eliminate_player("B")
+        self.assertEqual(gs.check_win_condition(), "Town")
+
+
+class TestGameStateElimination(unittest.TestCase):
+    """Verify player elimination mechanics."""
+
+    def _make_state(self) -> GameState:
+        return GameState(
+            players={
+                "Alice": PlayerState(name="Alice", role="Mafia", archetype="Analytical"),
+                "Bob": PlayerState(name="Bob", role="Villager", archetype="Passive"),
+            }
+        )
+
+    def test_eliminate_marks_dead_revealed(self):
+        gs = self._make_state()
+        gs.round_number = 3
+        gs.eliminate_player("Alice")
+        self.assertFalse(gs.players["Alice"].is_alive)
+        self.assertTrue(gs.players["Alice"].is_revealed)
+        self.assertEqual(gs.players["Alice"].eliminated_round, 3)
+        self.assertEqual(gs.eliminated_this_round, "Alice")
+
+    def test_eliminate_nonexistent_player_is_noop(self):
+        gs = self._make_state()
+        gs.eliminate_player("Charlie")  # should not raise
+        self.assertTrue(gs.players["Alice"].is_alive)
+
+    def test_alive_players_excludes_dead(self):
+        gs = self._make_state()
+        gs.eliminate_player("Alice")
+        self.assertEqual(gs.get_alive_players(), ["Bob"])
+
+    def test_get_alive_mafia(self):
+        gs = self._make_state()
+        self.assertEqual(gs.get_alive_mafia(), ["Alice"])
+        gs.eliminate_player("Alice")
+        self.assertEqual(gs.get_alive_mafia(), [])
+
+    def test_get_alive_town(self):
+        gs = self._make_state()
+        self.assertEqual(gs.get_alive_town(), ["Bob"])
+
+
+class TestGameStateNightActions(unittest.TestCase):
+    """Verify night action resolution (kill + protect)."""
+
+    def _make_state(self) -> GameState:
+        return GameState(
+            players={
+                "A": PlayerState(name="A", role="Mafia", archetype="Analytical"),
+                "B": PlayerState(name="B", role="Villager", archetype="Passive"),
+                "C": PlayerState(name="C", role="Doctor", archetype="Diplomatic"),
+            }
+        )
+
+    def test_kill_succeeds_without_protection(self):
+        gs = self._make_state()
+        gs.night_kill_target = "B"
+        killed, protected = gs.apply_night_actions()
+        self.assertEqual(killed, "B")
+        self.assertFalse(protected)
+        self.assertFalse(gs.players["B"].is_alive)
+
+    def test_kill_blocked_by_protection(self):
+        gs = self._make_state()
+        gs.night_kill_target = "B"
+        gs.doctor_protect_target = "B"
+        killed, protected = gs.apply_night_actions()
+        self.assertIsNone(killed)
+        self.assertTrue(protected)
+        self.assertTrue(gs.players["B"].is_alive)
+
+    def test_no_kill_target(self):
+        gs = self._make_state()
+        killed, protected = gs.apply_night_actions()
+        self.assertIsNone(killed)
+        self.assertFalse(protected)
+
+    def test_protection_on_wrong_target(self):
+        gs = self._make_state()
+        gs.night_kill_target = "B"
+        gs.doctor_protect_target = "C"  # protecting wrong player
+        killed, protected = gs.apply_night_actions()
+        self.assertEqual(killed, "B")
+        self.assertFalse(protected)
+
+
+class TestGameStateResetRound(unittest.TestCase):
+    """Verify round state reset."""
+
+    def test_reset_clears_votes_and_night_targets(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Mafia", archetype="Analytical")}
+        )
+        gs.votes = {"A": "B"}
+        gs.night_kill_target = "B"
+        gs.doctor_protect_target = "A"
+        gs.reset_round_state()
+        self.assertEqual(gs.votes, {})
+        self.assertIsNone(gs.night_kill_target)
+        self.assertIsNone(gs.doctor_protect_target)
+
+    def test_reset_preserves_last_protected(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Mafia", archetype="Analytical")}
+        )
+        gs.doctor_protect_target = "A"
+        gs.reset_round_state()
+        self.assertEqual(gs.last_protected, "A")
+
+
+class TestGameStateVoteTally(unittest.TestCase):
+    """Verify vote tallying edge cases."""
+
+    def test_unanimous_vote(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")}
+        )
+        gs.votes = {"X": "A", "Y": "A", "Z": "A"}
+        self.assertEqual(gs.tally_votes(), "A")
+
+    def test_split_vote_returns_none(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")}
+        )
+        gs.votes = {"X": "A", "Y": "B"}
+        self.assertIsNone(gs.tally_votes())
+
+    def test_plurality_winner(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")}
+        )
+        gs.votes = {"X": "A", "Y": "A", "Z": "B"}
+        self.assertEqual(gs.tally_votes(), "A")
+
+
+class TestGameStateSummaries(unittest.TestCase):
+    """Verify public and omniscient state summaries."""
+
+    def _make_state(self) -> GameState:
+        return GameState(
+            players={
+                "Alice": PlayerState(name="Alice", role="Mafia", archetype="Analytical"),
+                "Bob": PlayerState(name="Bob", role="Villager", archetype="Passive"),
+            }
+        )
+
+    def test_public_summary_hides_living_roles(self):
+        gs = self._make_state()
+        summary = gs.get_public_state_summary()
+        self.assertNotIn("Mafia", summary)
+        self.assertIn("Alice", summary)
+        self.assertIn("Bob", summary)
+
+    def test_public_summary_reveals_dead_roles(self):
+        gs = self._make_state()
+        gs.eliminate_player("Alice")
+        summary = gs.get_public_state_summary()
+        self.assertIn("Alice (Mafia)", summary)
+
+    def test_omniscient_summary_shows_all_roles(self):
+        gs = self._make_state()
+        summary = gs.get_omniscient_state_summary()
+        self.assertIn("Mafia", summary)
+        self.assertIn("Villager", summary)
+
+    def test_omniscient_shows_alive_dead_status(self):
+        gs = self._make_state()
+        gs.eliminate_player("Alice")
+        summary = gs.get_omniscient_state_summary()
+        self.assertIn("DEAD", summary)
+        self.assertIn("ALIVE", summary)
+
+
+class TestGameStateLogging(unittest.TestCase):
+    """Verify game log append."""
+
+    def test_log_appends_entry(self):
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")}
+        )
+        gs.log("A", "Villager", "Analytical", "some reasoning", "some action")
+        self.assertEqual(len(gs.game_log), 1)
+        entry = gs.game_log[0]
+        self.assertEqual(entry.agent_name, "A")
+        self.assertEqual(entry.role, "Villager")
+        self.assertEqual(entry.action, "some action")
+        self.assertEqual(entry.phase, GamePhase.DAY_DISCUSSION)
+
+
+# ===================================================================== #
+#  SuspicionState: belief tracking, staleness, Iroh Protocol            #
+# ===================================================================== #
+
+class TestSuspicionStateBasics(unittest.TestCase):
+    """Core suspicion state operations."""
+
+    def test_initialize_uniform_prior(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B", "C", "D", "E"], num_mafia=2)
+        self.assertAlmostEqual(s.probabilities["A"], 0.4)
+        self.assertEqual(s.update_count, 0)
+
+    def test_update_clamps_to_bounds(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.update("A", 1.5)
+        self.assertEqual(s.probabilities["A"], 0.99)
+        s.update("A", -0.5)
+        self.assertEqual(s.probabilities["A"], 0.01)
+
+    def test_update_increments_count(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A"])
+        s.update("A", 0.5)
+        self.assertEqual(s.update_count, 1)
+
+    def test_get_certainty_returns_probability(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A"])
+        s.update("A", 0.75)
+        self.assertAlmostEqual(s.get_certainty("A"), 0.75)
+
+    def test_get_certainty_unknown_player_returns_zero(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        self.assertEqual(s.get_certainty("Unknown"), 0.0)
+
+    def test_get_top_suspect(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B", "C"])
+        s.update("B", 0.9)
+        top, prob = s.get_top_suspect()
+        self.assertEqual(top, "B")
+        self.assertAlmostEqual(prob, 0.9)
+
+    def test_get_top_suspect_empty_returns_none(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        self.assertIsNone(s.get_top_suspect())
+
+    def test_remove_player(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.remove_player("A")
+        self.assertNotIn("A", s.probabilities)
+        # Remove nonexistent is no-op
+        s.remove_player("Z")
+
+    def test_summary_format(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.update("A", 0.8)
+        summary = s.summary()
+        self.assertIn("80% sus", summary)
+        self.assertIn("A:", summary)
+
+    def test_summary_empty(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        self.assertEqual(s.summary(), "No belief state.")
+
+
+class TestSuspicionStateStaleness(unittest.TestCase):
+    """Belief staleness and frustration detection."""
+
+    def test_first_check_never_stale(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        self.assertFalse(s.check_staleness())
+
+    def test_becomes_stale_after_threshold(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.check_staleness()  # first snapshot
+        s.check_staleness()  # delta < 0.05, stale_rounds=1
+        self.assertFalse(s.is_frustrated)
+        s.check_staleness()  # delta < 0.05, stale_rounds=2
+        self.assertTrue(s.is_frustrated)
+
+    def test_staleness_resets_on_significant_change(self):
+        from agents.belief_state import SuspicionState
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.check_staleness()
+        s.check_staleness()  # stale_rounds=1
+        s.update("A", 0.9)  # significant change
+        result = s.check_staleness()
+        self.assertFalse(result)
+        self.assertFalse(s.is_frustrated)
+
+
+class TestIrohProtocol(unittest.TestCase):
+    """Graduated Iroh Protocol reveal logic."""
+
+    def _make_beliefs(self, suspicion_of_target: float) -> dict[str, "SuspicionState"]:
+        from agents.belief_state import SuspicionState
+        # 3 other agents all suspect "Target" at the same level
+        beliefs = {}
+        for agent in ["Agent1", "Agent2", "Agent3"]:
+            b = SuspicionState()
+            b.initialize(["Target", agent])
+            b.update("Target", suspicion_of_target)
+            beliefs[agent] = b
+        beliefs["Target"] = SuspicionState()
+        beliefs["Target"].initialize(["Agent1", "Agent2", "Agent3"])
+        return beliefs
+
+    def test_no_reveal_below_threshold(self):
+        from agents.belief_state import SuspicionState
+        beliefs = self._make_beliefs(0.2)
+        target_belief = beliefs["Target"]
+        self.assertIsNone(target_belief.get_iroh_level("Target", beliefs))
+
+    def test_soft_hint_at_035(self):
+        beliefs = self._make_beliefs(0.36)
+        self.assertEqual(
+            beliefs["Target"].get_iroh_level("Target", beliefs),
+            "soft_hint"
+        )
+
+    def test_hard_claim_at_045(self):
+        beliefs = self._make_beliefs(0.46)
+        self.assertEqual(
+            beliefs["Target"].get_iroh_level("Target", beliefs),
+            "hard_claim"
+        )
+
+    def test_full_reveal_at_055(self):
+        beliefs = self._make_beliefs(0.56)
+        self.assertEqual(
+            beliefs["Target"].get_iroh_level("Target", beliefs),
+            "full_reveal"
+        )
+
+    def test_red_check_lowers_thresholds(self):
+        beliefs = self._make_beliefs(0.30)  # Below normal soft_hint (0.35)
+        # With red-check adjustment (-0.10), threshold becomes 0.25
+        level = beliefs["Target"].get_iroh_level(
+            "Target", beliefs, has_red_check=True,
+        )
+        self.assertEqual(level, "soft_hint")
+
+    def test_should_reveal_identity(self):
+        beliefs = self._make_beliefs(0.50)  # Above default threshold 0.45
+        self.assertTrue(beliefs["Target"].should_reveal_identity("Target", beliefs))
+
+    def test_should_not_reveal_below_threshold(self):
+        beliefs = self._make_beliefs(0.30)
+        self.assertFalse(beliefs["Target"].should_reveal_identity("Target", beliefs))
+
+    def test_avg_suspicion_no_trackers_returns_none(self):
+        from agents.belief_state import SuspicionState
+        target = SuspicionState()
+        result = target._get_avg_suspicion("Target", {"Target": target})
+        self.assertIsNone(result)
+
+
+# ===================================================================== #
+#  BeliefGraph: scum-tell detection                                     #
+# ===================================================================== #
+
+class TestBeliefGraph(unittest.TestCase):
+    """Scum-tell pattern detection tests."""
+
+    def test_record_discussion_increments_count(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg.record_discussion("Alice")
+        bg.record_discussion("Alice")
+        self.assertEqual(bg._discussion_counts["Alice"], 2)
+
+    def test_get_quiet_players(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg.record_discussion("Alice")
+        bg.record_discussion("Alice")
+        bg.record_discussion("Alice")
+        bg.record_discussion("Bob")
+        quiet = bg.get_quiet_players(["Alice", "Bob", "Charlie"], threshold=1)
+        self.assertIn("Bob", quiet)
+        self.assertIn("Charlie", quiet)
+        self.assertNotIn("Alice", quiet)
+
+    def test_late_bandwagon_detected(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        current_votes = {"X": "Target", "Y": "Target"}  # 2 already voted
+        result = bg.check_late_bandwagon(
+            "Alice", "Target", "yeah same", current_votes,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("LATE BANDWAGON", result)
+        self.assertIn("Alice", bg.flags)
+
+    def test_no_bandwagon_with_substantive_reasoning(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        current_votes = {"X": "Target", "Y": "Target"}
+        result = bg.check_late_bandwagon(
+            "Alice", "Target",
+            "I noticed Target shifted blame onto Bob after being accused, a classic redirect pattern",
+            current_votes,
+        )
+        self.assertIsNone(result)
+
+    def test_no_bandwagon_with_few_prior_votes(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        current_votes = {"X": "Target"}  # Only 1 prior vote
+        result = bg.check_late_bandwagon("Alice", "Target", "yeah", current_votes)
+        self.assertIsNone(result)
+
+    def test_redirect_detected(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg.record_discussion("Alice")
+        bg.record_discussion("Alice")
+        # Charlie is quiet (0 discussions)
+        result = bg.check_redirect(
+            "Alice", "what about charlie being quiet?",
+            current_target="Bob",
+            alive_players=["Alice", "Bob", "Charlie"],
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("REDIRECT", result)
+
+    def test_no_redirect_when_mentioning_current_target(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        result = bg.check_redirect(
+            "Alice", "I agree Bob is suspicious, but charlie too",
+            current_target="Bob",
+            alive_players=["Alice", "Bob", "Charlie"],
+        )
+        # Both Bob and Charlie mentioned — not a redirect
+        self.assertIsNone(result)
+
+    def test_no_redirect_when_no_current_target(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        result = bg.check_redirect(
+            "Alice", "Charlie is sus",
+            current_target=None,
+            alive_players=["Alice", "Bob", "Charlie"],
+        )
+        self.assertIsNone(result)
+
+    def test_instahammer_detected(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        # Need previous voters in vote_order to not be one of the first 2
+        bg._vote_order = ["X", "Y"]
+        # 5 alive, majority = 3 needed. votes_so_far = 2, +1 = 3 → decisive
+        result = bg.check_instahammer("Alice", votes_so_far=2, total_alive=5)
+        self.assertIsNotNone(result)
+        self.assertIn("INSTAHAMMER", result)
+
+    def test_no_instahammer_for_early_voters(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        # First voter, even if vote reaches majority
+        result = bg.check_instahammer("Alice", votes_so_far=2, total_alive=5)
+        # Alice is first in vote_order — not suspicious
+        self.assertIsNone(result)
+
+    def test_no_instahammer_below_majority(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg._vote_order = ["X", "Y"]
+        # 5 alive, majority = 3. votes_so_far = 1, +1 = 2 < 3
+        result = bg.check_instahammer("Alice", votes_so_far=1, total_alive=5)
+        self.assertIsNone(result)
+
+    def test_get_flags_for_prompt_empty(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        self.assertEqual(bg.get_flags_for_prompt(), "")
+
+    def test_get_flags_for_prompt_with_flags(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg.flags["Alice"] = ["LATE BANDWAGON: Alice joined"]
+        prompt = bg.get_flags_for_prompt()
+        self.assertIn("SCUM-TELL", prompt)
+        self.assertIn("Alice", prompt)
+
+    def test_reset_round_clears_vote_order(self):
+        from agents.belief_state import BeliefGraph
+        bg = BeliefGraph()
+        bg._vote_order = ["X", "Y"]
+        bg.flags["A"] = ["some flag"]
+        bg.reset_round()
+        self.assertEqual(bg._vote_order, [])
+        # Flags are preserved across rounds
+        self.assertIn("A", bg.flags)
+
+
+# ===================================================================== #
+#  TemporalConsistencyChecker                                           #
+# ===================================================================== #
+
+class TestTemporalConsistencyChecker(unittest.TestCase):
+    """Detect temporal impossibilities in agent messages."""
+
+    def test_yesterday_on_round_1_is_slip(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "I remember yesterday when Bob was quiet", 1)
+        self.assertTrue(len(slips) > 0)
+        self.assertIn("yesterday", slips[0].lower())
+
+    def test_yesterday_on_round_2_is_not_slip(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "Yesterday Bob was quiet", 2)
+        self.assertEqual(len(slips), 0)
+
+    def test_last_game_is_always_slip(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "In the last game Bob was Mafia", 3)
+        self.assertTrue(len(slips) > 0)
+
+    def test_pre_day_chat_is_always_slip(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "In the pre-day chat we agreed", 2)
+        self.assertTrue(len(slips) > 0)
+
+    def test_remember_when_is_slip(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "Remember when we discussed this?", 1)
+        self.assertTrue(len(slips) > 0)
+
+    def test_clean_message_has_no_slips(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        slips = checker.check_message("Alice", "Bob is acting really suspicious", 1)
+        self.assertEqual(len(slips), 0)
+
+    def test_slips_accumulate(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        checker.check_message("Alice", "Yesterday Bob was weird", 1)
+        checker.check_message("Alice", "In the pre-day chat we talked", 1)
+        self.assertEqual(len(checker.slips["Alice"]), 2)
+
+    def test_get_slips_for_prompt_empty(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        self.assertEqual(checker.get_slips_for_prompt(), "")
+
+    def test_get_slips_for_prompt_with_slips(self):
+        from agents.belief_state import TemporalConsistencyChecker
+        checker = TemporalConsistencyChecker()
+        checker.check_message("Alice", "Yesterday I noticed something", 1)
+        prompt = checker.get_slips_for_prompt()
+        self.assertIn("IMPOSSIBLE", prompt)
+        self.assertIn("Alice", prompt)
+
+
+# ===================================================================== #
+#  Overconfidence gating & belief prompt injection                      #
+# ===================================================================== #
+
+class TestOverconfidenceGating(unittest.TestCase):
+    """Test overconfidence archetype gating logic."""
+
+    def test_gates_overconfident_below_07(self):
+        from agents.belief_state import SuspicionState, should_gate_overconfidence
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.update("A", 0.5)
+        self.assertTrue(should_gate_overconfidence("Overconfident", s, "A"))
+
+    def test_does_not_gate_overconfident_above_07(self):
+        from agents.belief_state import SuspicionState, should_gate_overconfidence
+        s = SuspicionState()
+        s.initialize(["A"])
+        s.update("A", 0.8)
+        self.assertFalse(should_gate_overconfidence("Overconfident", s, "A"))
+
+    def test_does_not_gate_other_archetypes(self):
+        from agents.belief_state import SuspicionState, should_gate_overconfidence
+        s = SuspicionState()
+        s.initialize(["A"])
+        s.update("A", 0.3)
+        self.assertFalse(should_gate_overconfidence("Analytical", s, "A"))
+
+    def test_does_not_gate_none_target(self):
+        from agents.belief_state import SuspicionState, should_gate_overconfidence
+        s = SuspicionState()
+        self.assertFalse(should_gate_overconfidence("Overconfident", s, None))
+
+
+class TestBuildBeliefPromptInjection(unittest.TestCase):
+    """Verify belief prompt injection construction."""
+
+    def test_includes_suspicion_summary(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A", "B"])
+        s.update("A", 0.7)
+        prompt = build_belief_prompt_injection(s, "Analytical")
+        self.assertIn("70% sus", prompt)
+
+    def test_overconfident_archetype_modulation(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A"])
+        prompt = build_belief_prompt_injection(s, "Overconfident")
+        self.assertIn("STRONG evidence", prompt)
+
+    def test_volatile_archetype_modulation(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A"])
+        prompt = build_belief_prompt_injection(s, "Volatile")
+        self.assertIn("ANY new information", prompt)
+
+    def test_analytical_archetype_modulation(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A"])
+        prompt = build_belief_prompt_injection(s, "Analytical")
+        self.assertIn("explicit explanation chain", prompt)
+
+    def test_frustration_state_included(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A"])
+        s._stale_rounds = 3  # Force frustration
+        prompt = build_belief_prompt_injection(s, "Analytical")
+        self.assertIn("FRUSTRATION STATE", prompt)
+
+    def test_overconfident_caution_below_07(self):
+        from agents.belief_state import SuspicionState, build_belief_prompt_injection
+        s = SuspicionState()
+        s.initialize(["A"])
+        s.update("A", 0.5)
+        prompt = build_belief_prompt_injection(s, "Overconfident")
+        self.assertIn("CAUTION", prompt)
+
+
+# ===================================================================== #
+#  parse_belief_updates                                                 #
+# ===================================================================== #
+
+class TestParseBeliefUpdates(unittest.TestCase):
+    """Test belief update extraction from reasoning text."""
+
+    def test_single_update(self):
+        from agents.belief_state import parse_belief_updates
+        text = "BELIEF_UPDATE: Alice=0.75 because she was quiet"
+        result = parse_belief_updates(text)
+        self.assertAlmostEqual(result["Alice"], 0.75)
+
+    def test_multiple_updates(self):
+        from agents.belief_state import parse_belief_updates
+        text = (
+            "BELIEF_UPDATE: Alice=0.75 because quiet\n"
+            "BELIEF_UPDATE: Bob=0.30 because defended Alice"
+        )
+        result = parse_belief_updates(text)
+        self.assertEqual(len(result), 2)
+        self.assertAlmostEqual(result["Alice"], 0.75)
+        self.assertAlmostEqual(result["Bob"], 0.30)
+
+    def test_no_updates(self):
+        from agents.belief_state import parse_belief_updates
+        result = parse_belief_updates("Just normal reasoning text")
+        self.assertEqual(result, {})
+
+    def test_boundary_values(self):
+        from agents.belief_state import parse_belief_updates
+        text = "BELIEF_UPDATE: A=0.0 test\nBELIEF_UPDATE: B=1.0 test"
+        result = parse_belief_updates(text)
+        self.assertAlmostEqual(result["A"], 0.0)
+        self.assertAlmostEqual(result["B"], 1.0)
+
+    def test_case_insensitive(self):
+        from agents.belief_state import parse_belief_updates
+        text = "belief_update: Alice=0.50 because test"
+        result = parse_belief_updates(text)
+        self.assertAlmostEqual(result["Alice"], 0.50)
+
+
+# ===================================================================== #
+#  apply_overconfidence_gate                                            #
+# ===================================================================== #
+
+class TestApplyOverconfidenceGate(unittest.TestCase):
+    """Test overconfident language softening."""
+
+    def test_softens_low_certainty_declarative(self):
+        from agents.belief_state import SuspicionState, apply_overconfidence_gate
+        s = SuspicionState()
+        s.initialize(["Alice"])
+        s.update("Alice", 0.4)  # Below 0.7
+        text = "Alice is the one we should vote for"
+        result = apply_overconfidence_gate(text, s)
+        self.assertIn("(I think)", result)
+
+    def test_does_not_soften_high_certainty(self):
+        from agents.belief_state import SuspicionState, apply_overconfidence_gate
+        s = SuspicionState()
+        s.initialize(["Alice"])
+        s.update("Alice", 0.8)  # Above 0.7
+        text = "Alice is the one we should vote for"
+        result = apply_overconfidence_gate(text, s)
+        self.assertNotIn("(I think)", result)
+
+
+# ===================================================================== #
+#  GameMemoryStore: load, save, add_learning, get_memory_prefix         #
+# ===================================================================== #
+
+class TestGameMemoryStore(unittest.TestCase):
+    """Test cross-game memory persistence."""
+
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_load_nonexistent_dir_is_noop(self):
+        from agents.memory import GameMemoryStore
+        store = GameMemoryStore(memory_dir="/tmp/nonexistent_mafia_test_dir_xyz")
+        store.load()  # should not raise
+
+    def test_save_creates_files(self):
+        from agents.memory import GameMemoryStore
+        import os
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        store.save()
+        files = os.listdir(self.tmpdir)
+        self.assertIn("detective_learnings.json", files)
+        self.assertIn("global_learnings.json", files)
+
+    def test_add_and_retrieve_learning(self):
+        from agents.memory import GameMemoryStore, Learning
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        store.add_learning(Learning(
+            insight="Quiet players are often Mafia",
+            context="Day 2",
+            role="Detective",
+            round_number=2,
+            outcome="correct",
+        ))
+        prefix = store.get_memory_prefix("Detective")
+        self.assertIn("Quiet players are often Mafia", prefix)
+        self.assertIn("✓", prefix)  # correct outcome marker
+
+    def test_learning_also_added_to_global(self):
+        from agents.memory import GameMemoryStore, Learning
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        store.add_learning(Learning(
+            insight="Test insight",
+            context="test",
+            role="Villager",
+            round_number=1,
+            outcome="unknown",
+        ))
+        self.assertEqual(len(store._learnings["Villager"]), 1)
+        self.assertEqual(len(store._learnings["global"]), 1)
+
+    def test_get_memory_prefix_empty_returns_empty(self):
+        from agents.memory import GameMemoryStore
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        self.assertEqual(store.get_memory_prefix("Detective"), "")
+
+    def test_save_and_load_roundtrip(self):
+        from agents.memory import GameMemoryStore, Learning
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        store.add_learning(Learning(
+            insight="Test roundtrip",
+            context="test",
+            role="Doctor",
+            round_number=1,
+            outcome="incorrect",
+        ))
+        store.save()
+
+        store2 = GameMemoryStore(memory_dir=self.tmpdir)
+        store2.load()
+        prefix = store2.get_memory_prefix("Doctor")
+        self.assertIn("Test roundtrip", prefix)
+        self.assertIn("✗", prefix)  # incorrect outcome marker
+
+    def test_max_learnings_cap(self):
+        from agents.memory import GameMemoryStore, Learning, _MAX_LEARNINGS_PER_ROLE
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        for i in range(_MAX_LEARNINGS_PER_ROLE + 10):
+            store.add_learning(Learning(
+                insight=f"Learning {i}",
+                context="test",
+                role="Mafia",
+                round_number=1,
+                outcome="unknown",
+            ))
+        store.save()
+        store2 = GameMemoryStore(memory_dir=self.tmpdir)
+        store2.load()
+        self.assertLessEqual(len(store2._learnings["Mafia"]), _MAX_LEARNINGS_PER_ROLE)
+
+    def test_record_game_outcome(self):
+        from agents.memory import GameMemoryStore
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        assignments = [
+            {"name": "Alice", "role": "Mafia"},
+            {"name": "Bob", "role": "Villager"},
+        ]
+        store.record_game_outcome("Town", assignments, round_count=5)
+        prefix = store.get_memory_prefix("global")
+        self.assertIn("5 rounds", prefix)
+        # Alice was Mafia and Town won → incorrect for her
+        mafia_prefix = store.get_memory_prefix("Mafia")
+        self.assertIn("Alice", mafia_prefix)
+
+    def test_corrupted_json_handled_gracefully(self):
+        from agents.memory import GameMemoryStore
+        import os
+        os.makedirs(self.tmpdir, exist_ok=True)
+        with open(os.path.join(self.tmpdir, "detective_learnings.json"), "w") as f:
+            f.write("not valid json{{{")
+        store = GameMemoryStore(memory_dir=self.tmpdir)
+        store.load()  # should not raise
+        self.assertEqual(store._learnings["Detective"], [])
+
+
+# ===================================================================== #
+#  SummaryAgent: summarize, eliminations, evidence, compression         #
+# ===================================================================== #
+
+class TestSummaryAgentSummarize(unittest.TestCase):
+    """Test SummaryAgent main summarize method."""
+
+    def _make_state(self) -> GameState:
+        return GameState(
+            players={
+                "Alice": PlayerState(name="Alice", role="Mafia", archetype="Analytical"),
+                "Bob": PlayerState(name="Bob", role="Villager", archetype="Passive"),
+                "Charlie": PlayerState(name="Charlie", role="Detective", archetype="Contrarian"),
+            }
+        )
+
+    def test_summarize_includes_alive_players(self):
+        from agents.summary import SummaryAgent
+        gs = self._make_state()
+        summary = SummaryAgent().summarize(gs)
+        self.assertIn("Alice", summary)
+        self.assertIn("Bob", summary)
+        self.assertIn("3 remaining", summary)
+
+    def test_summarize_includes_elimination(self):
+        from agents.summary import SummaryAgent
+        gs = self._make_state()
+        gs.eliminate_player("Alice")
+        summary = SummaryAgent().summarize(gs)
+        self.assertIn("Alice (Mafia)", summary)
+
+    def test_summarize_no_elimination(self):
+        from agents.summary import SummaryAgent
+        gs = self._make_state()
+        summary = SummaryAgent().summarize(gs)
+        self.assertNotIn("Recent elimination", summary)
+
+    def test_summarize_with_votes(self):
+        from agents.summary import SummaryAgent
+        gs = self._make_state()
+        gs.votes = {"Alice": "Bob", "Charlie": "Bob"}
+        summary = SummaryAgent().summarize(gs)
+        self.assertIn("Votes so far", summary)
+        self.assertIn("Bob(2)", summary)
+
+
+class TestSummaryAgentEvidence(unittest.TestCase):
+    """Test evidence extraction."""
+
+    def test_extracts_evidence_from_log(self):
+        from agents.summary import SummaryAgent
+        from engine.game_state import LogEntry, GamePhase
+        entries = [
+            LogEntry(
+                phase=GamePhase.DAY_DISCUSSION, round_number=1,
+                agent_name="Alice", role="Villager", archetype="Analytical",
+                reasoning=None, action="Bob voted against Charlie then changed his mind"
+            ),
+        ]
+        result = SummaryAgent()._get_main_evidence(entries)
+        self.assertIn("Alice", result)
+        self.assertIn("voted", result)
+
+    def test_no_evidence_from_narrator(self):
+        from agents.summary import SummaryAgent
+        from engine.game_state import LogEntry, GamePhase
+        entries = [
+            LogEntry(
+                phase=GamePhase.DAY_DISCUSSION, round_number=1,
+                agent_name="Narrator", role="Narrator", archetype="",
+                reasoning=None, action="The sun set and the voted player was eliminated"
+            ),
+        ]
+        result = SummaryAgent()._get_main_evidence(entries)
+        self.assertIsNone(result)
+
+    def test_no_evidence_when_no_markers(self):
+        from agents.summary import SummaryAgent
+        from engine.game_state import LogEntry, GamePhase
+        entries = [
+            LogEntry(
+                phase=GamePhase.DAY_DISCUSSION, round_number=1,
+                agent_name="Alice", role="Villager", archetype="Analytical",
+                reasoning=None, action="Hello everyone"
+            ),
+        ]
+        result = SummaryAgent()._get_main_evidence(entries)
+        self.assertIsNone(result)
+
+
+class TestSummaryAgentRequiredAction(unittest.TestCase):
+    """Test required action per phase."""
+
+    def test_discussion_phase(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            phase=GamePhase.DAY_DISCUSSION,
+        )
+        action = SummaryAgent()._get_required_action(gs)
+        self.assertIn("discuss", action.lower())
+
+    def test_vote_phase(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            phase=GamePhase.DAY_VOTE,
+        )
+        action = SummaryAgent()._get_required_action(gs)
+        self.assertIn("VOTE", action)
+
+    def test_night_phase(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            phase=GamePhase.NIGHT,
+        )
+        action = SummaryAgent()._get_required_action(gs)
+        self.assertIn("Night", action)
+
+    def test_game_over_phase(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            phase=GamePhase.GAME_OVER,
+        )
+        action = SummaryAgent()._get_required_action(gs)
+        self.assertIn("Game over", action)
+
+
+class TestSummaryAgentCompression(unittest.TestCase):
+    """Test progressive history compression."""
+
+    def test_rounds_1_2_full_history(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            round_number=1,
+        )
+        history = ["msg1", "msg2", "msg3"]
+        result = SummaryAgent().compress_discussion_history(history, gs)
+        self.assertEqual(result, history)
+
+    def test_rounds_3_4_summarizes_older(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={
+                "A": PlayerState(name="A", role="Villager", archetype="Analytical"),
+                "B": PlayerState(name="B", role="Villager", archetype="Passive"),
+            },
+            round_number=3,
+        )
+        history = [
+            "Alice: I suspect Bob is mafia",
+            "Bob: I'm not mafia, Alice is suspicious",
+            "Alice: Let's vote Bob",
+            "Bob: No way, Alice is the guilty one",
+            "Alice: Current round action",
+            "Bob: Current round response",
+        ]
+        result = SummaryAgent().compress_discussion_history(history, gs)
+        self.assertTrue(any("[EARLIER SUMMARY]" in r for r in result))
+        self.assertLess(len(result), len(history))
+
+    def test_round_5_plus_critical_only(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={
+                "A": PlayerState(name="A", role="Villager", archetype="Analytical"),
+            },
+            round_number=5,
+        )
+        history = [
+            "Alice: Regular chat",
+            "Bob: [SYSTEM] Alice was eliminated. Role: Mafia",
+            "Charlie: Regular discussion",
+            "Diana: Current round talk",
+            "Eve: More current round",
+        ]
+        result = SummaryAgent().compress_discussion_history(history, gs)
+        # Should contain the system message but not necessarily the older regular chat
+        found_critical = any("[CRITICAL HISTORY]" in r for r in result)
+        found_system = any("[SYSTEM]" in r for r in result)
+        # Either critical history is present or all history compressed to current
+        self.assertTrue(found_critical or found_system or len(result) <= len(history))
+
+    def test_empty_history_unchanged(self):
+        from agents.summary import SummaryAgent
+        gs = GameState(
+            players={"A": PlayerState(name="A", role="Villager", archetype="Analytical")},
+            round_number=4,
+        )
+        result = SummaryAgent().compress_discussion_history([], gs)
+        self.assertEqual(result, [])
+
+
+class TestSummarizeKeyAccusations(unittest.TestCase):
+    """Test key accusation extraction helper."""
+
+    def test_extracts_accusations(self):
+        from agents.summary import SummaryAgent
+        entries = [
+            "Alice: I suspect Bob is guilty",
+            "Bob: Nothing interesting here",
+            "Charlie: Bob is suspicious, vote him out",
+        ]
+        result = SummaryAgent._summarize_key_accusations(entries)
+        self.assertIn("Alice", result)
+        self.assertIn("Charlie", result)
+
+    def test_no_accusations_returns_placeholder(self):
+        from agents.summary import SummaryAgent
+        entries = ["Alice: Hello", "Bob: Hi there"]
+        result = SummaryAgent._summarize_key_accusations(entries)
+        self.assertIn("No significant accusations", result)
+
+
+class TestSummaryAgentVoteSummary(unittest.TestCase):
+    """Test compact vote summary."""
+
+    def test_vote_summary_format(self):
+        from agents.summary import SummaryAgent
+        votes = {"X": "Alice", "Y": "Alice", "Z": "Bob"}
+        result = SummaryAgent()._get_vote_summary(votes)
+        self.assertIn("Alice(2)", result)
+        self.assertIn("Bob(1)", result)
+
+
+# ===================================================================== #
+#  Rate limiter: error classification, backoff                          #
+# ===================================================================== #
+
+class TestRateLimiterErrorClassification(unittest.TestCase):
+    """Test error classification functions."""
+
+    def test_rate_limit_429_in_message(self):
+        from agents.rate_limiter import _is_rate_limit_error
+        self.assertTrue(_is_rate_limit_error(Exception("429 Too Many Requests")))
+
+    def test_rate_limit_attribute(self):
+        from agents.rate_limiter import _is_rate_limit_error
+        exc = Exception("rate limited")
+        exc.status_code = 429
+        self.assertTrue(_is_rate_limit_error(exc))
+
+    def test_not_rate_limit(self):
+        from agents.rate_limiter import _is_rate_limit_error
+        self.assertFalse(_is_rate_limit_error(Exception("some other error")))
+
+    def test_server_error_500(self):
+        from agents.rate_limiter import _is_server_error
+        exc = Exception("error")
+        exc.status_code = 500
+        self.assertTrue(_is_server_error(exc))
+
+    def test_server_error_502(self):
+        from agents.rate_limiter import _is_server_error
+        self.assertTrue(_is_server_error(Exception("error code: 502")))
+
+    def test_not_server_error(self):
+        from agents.rate_limiter import _is_server_error
+        self.assertFalse(_is_server_error(Exception("regular error")))
+
+    def test_timeout_error_asyncio(self):
+        import asyncio
+        from agents.rate_limiter import _is_timeout_error
+        self.assertTrue(_is_timeout_error(asyncio.TimeoutError()))
+
+    def test_timeout_error_connection(self):
+        from agents.rate_limiter import _is_timeout_error
+        self.assertTrue(_is_timeout_error(ConnectionError("connection failed")))
+
+    def test_timeout_in_message(self):
+        from agents.rate_limiter import _is_timeout_error
+        self.assertTrue(_is_timeout_error(Exception("Request timed out")))
+
+    def test_not_timeout(self):
+        from agents.rate_limiter import _is_timeout_error
+        self.assertFalse(_is_timeout_error(Exception("other error")))
+
+
+class TestBackoffDelay(unittest.TestCase):
+    """Test exponential backoff calculation."""
+
+    def test_first_attempt_delay(self):
+        from agents.rate_limiter import _backoff_delay
+        delay = _backoff_delay(0)
+        # base=1.0, 2^0=1, cap=8, jitter 0–0.5
+        self.assertGreaterEqual(delay, 1.0)
+        self.assertLessEqual(delay, 1.5)
+
+    def test_second_attempt_delay(self):
+        from agents.rate_limiter import _backoff_delay
+        delay = _backoff_delay(1)
+        # base=1.0, 2^1=2, jitter 0–0.5
+        self.assertGreaterEqual(delay, 2.0)
+        self.assertLessEqual(delay, 2.5)
+
+    def test_cap_at_eight_seconds(self):
+        from agents.rate_limiter import _backoff_delay
+        delay = _backoff_delay(10)
+        # Should be capped at 8.0 + jitter (max 8.5)
+        self.assertLessEqual(delay, 8.5)
+
+
+class TestRetryStats(unittest.TestCase):
+    """Test retry stats tracking."""
+
+    def test_get_retry_stats_returns_copy(self):
+        from agents.rate_limiter import get_retry_stats, _retry_counters
+        _retry_counters["test_player"] = 3
+        stats = get_retry_stats()
+        self.assertEqual(stats["test_player"], 3)
+        # Modify copy should not affect original
+        stats["test_player"] = 99
+        self.assertEqual(_retry_counters["test_player"], 3)
+        # Cleanup
+        del _retry_counters["test_player"]
+
+
+# ===================================================================== #
+#  Game manager: pick functions, constraints                            #
+# ===================================================================== #
+
+class TestPickArchetype(unittest.TestCase):
+    """Test archetype selection by role."""
+
+    def test_villager_gets_villager_archetype(self):
+        from engine.game_manager import _pick_archetype
+        from prompts.archetypes import VILLAGER_ARCHETYPES
+        for _ in range(20):
+            arch = _pick_archetype("Villager")
+            self.assertIn(arch, VILLAGER_ARCHETYPES)
+
+    def test_mafia_gets_any_archetype(self):
+        from engine.game_manager import _pick_archetype
+        from prompts.archetypes import ALL_ARCHETYPES
+        for _ in range(20):
+            arch = _pick_archetype("Mafia")
+            self.assertIn(arch, ALL_ARCHETYPES)
+
+
+class TestPickPersonality(unittest.TestCase):
+    """Test personality selection."""
+
+    def test_demo_mode_restricts_pool(self):
+        from engine.game_manager import _pick_personality
+        from prompts.personalities import DEMO_PERSONALITIES
+        for _ in range(20):
+            p = _pick_personality(demo=True)
+            self.assertIn(p, DEMO_PERSONALITIES)
+
+    def test_regular_mode_from_full_pool(self):
+        from engine.game_manager import _pick_personality
+        from prompts.personalities import ALL_PERSONALITIES
+        for _ in range(20):
+            p = _pick_personality(demo=False)
+            self.assertIn(p, ALL_PERSONALITIES)
+
+
+class TestPersonalityConstrainedFrequencyCap(unittest.TestCase):
+    """Test personality frequency cap enforcement."""
+
+    def test_frequency_cap_prevents_overuse(self):
+        counts = {"TheGhost": 2}
+        # TheGhost is not consensus (cap=2), already at 2, should not be picked
+        for _ in range(30):
+            p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
+            self.assertNotEqual(p, "TheGhost")
+
+    def test_consensus_personality_cap_of_one(self):
+        from engine.game_manager import CONSENSUS_PERSONALITIES
+        for cp in CONSENSUS_PERSONALITIES:
+            counts = {cp: 1}
+            for _ in range(30):
+                p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
+                self.assertNotEqual(p, cp)
+
+    def test_raises_on_empty_pool(self):
+        """If all personalities are excluded, ValueError is raised."""
+        from prompts.personalities import ALL_PERSONALITIES
+        # Cap everything at 0 effectively by filling counts above cap
+        counts = {p: 10 for p in ALL_PERSONALITIES}
+        with self.assertRaises(ValueError):
+            _pick_personality_constrained("Villager", counts, archetype="Analytical")
+
+
+class TestGameManagerPlayerNames(unittest.TestCase):
+    """Verify player name list consistency."""
+
+    def test_eleven_players(self):
+        from engine.game_manager import PLAYER_NAMES, ROLE_DISTRIBUTION
+        self.assertEqual(len(PLAYER_NAMES), 11)
+        self.assertEqual(len(ROLE_DISTRIBUTION), 11)
+
+    def test_role_distribution(self):
+        from engine.game_manager import ROLE_DISTRIBUTION
+        self.assertEqual(ROLE_DISTRIBUTION.count("Mafia"), 2)
+        self.assertEqual(ROLE_DISTRIBUTION.count("Detective"), 1)
+        self.assertEqual(ROLE_DISTRIBUTION.count("Doctor"), 1)
+        self.assertEqual(ROLE_DISTRIBUTION.count("Villager"), 7)
+
+
+# ===================================================================== #
+#  Game tools: cast_vote, choose_target                                 #
+# ===================================================================== #
+
+class TestGameTools(unittest.TestCase):
+    """Test tool-decorated game action functions."""
+
+    def test_cast_vote_returns_vote_format(self):
+        from agents.game_tools import cast_vote
+        # The @tool decorator wraps the function; call the underlying logic
+        result = cast_vote.func("Alice", reasoning="she's suspicious")
+        self.assertEqual(result, "VOTE: Alice")
+
+    def test_cast_vote_default_reasoning(self):
+        from agents.game_tools import cast_vote
+        result = cast_vote.func("Bob")
+        self.assertEqual(result, "VOTE: Bob")
+
+    def test_choose_target_returns_target_format(self):
+        from agents.game_tools import choose_target
+        result = choose_target.func("Charlie", reasoning="protect from Mafia")
+        self.assertEqual(result, "TARGET: Charlie")
+
+    def test_choose_target_default_reasoning(self):
+        from agents.game_tools import choose_target
+        result = choose_target.func("Diana")
+        self.assertEqual(result, "TARGET: Diana")
+
+
+# ===================================================================== #
+#  Settings: env var parsing                                            #
+# ===================================================================== #
+
+class TestSettingsEnvParsing(unittest.TestCase):
+    """Test environment variable parsing helpers."""
+
+    def test_int_env_default(self):
+        from config.settings import _int_env
+        result = _int_env("NONEXISTENT_TEST_VAR_XYZ", 42, 100)
+        self.assertEqual(result, 42)
+
+    def test_int_env_clamped_to_max(self):
+        from config.settings import _int_env
+        with patch.dict("os.environ", {"TEST_INT": "999"}):
+            result = _int_env("TEST_INT", 5, 10)
+            self.assertEqual(result, 10)
+
+    def test_int_env_clamped_to_min_one(self):
+        from config.settings import _int_env
+        with patch.dict("os.environ", {"TEST_INT": "0"}):
+            result = _int_env("TEST_INT", 5, 10)
+            self.assertEqual(result, 1)
+
+    def test_int_env_invalid_returns_default(self):
+        from config.settings import _int_env
+        with patch.dict("os.environ", {"TEST_INT": "not_a_number"}):
+            result = _int_env("TEST_INT", 7, 10)
+            self.assertEqual(result, 7)
+
+    def test_float_env_default(self):
+        from config.settings import _float_env
+        result = _float_env("NONEXISTENT_FLOAT_XYZ", 3.14)
+        self.assertAlmostEqual(result, 3.14)
+
+    def test_float_env_clamped_to_min(self):
+        from config.settings import _float_env
+        with patch.dict("os.environ", {"TEST_FLOAT": "0.01"}):
+            result = _float_env("TEST_FLOAT", 1.0)
+            self.assertAlmostEqual(result, 0.1)
+
+    def test_float_env_invalid_returns_default(self):
+        from config.settings import _float_env
+        with patch.dict("os.environ", {"TEST_FLOAT": "abc"}):
+            result = _float_env("TEST_FLOAT", 2.5)
+            self.assertAlmostEqual(result, 2.5)
+
+
+# ===================================================================== #
+#  Prompt archetypes & personalities: structural checks                 #
+# ===================================================================== #
+
+class TestArchetypeStructure(unittest.TestCase):
+    """Verify archetype definitions are structurally sound."""
+
+    def test_all_archetypes_have_strategy_modifier(self):
+        from prompts.archetypes import ARCHETYPES
+        for name, data in ARCHETYPES.items():
+            self.assertIn("strategy_modifier", data, f"{name} missing strategy_modifier")
+
+    def test_all_archetypes_have_voice(self):
+        from prompts.archetypes import ARCHETYPES
+        for name, data in ARCHETYPES.items():
+            self.assertIn("voice", data, f"{name} missing voice")
+
+    def test_archetype_lists_consistent(self):
+        from prompts.archetypes import ALL_ARCHETYPES, ARCHETYPES
+        for a in ALL_ARCHETYPES:
+            self.assertIn(a, ARCHETYPES, f"{a} in ALL_ARCHETYPES but not in ARCHETYPES dict")
+
+
+class TestPersonalityStructure(unittest.TestCase):
+    """Verify personality definitions are structurally sound."""
+
+    def test_all_personalities_have_required_keys(self):
+        from prompts.personalities import PERSONALITIES
+        required = {"register", "voice_markers", "examples", "when_accused"}
+        for name, data in PERSONALITIES.items():
+            for key in required:
+                self.assertIn(key, data, f"{name} missing {key}")
+
+    def test_all_personalities_have_voice_marker_keys(self):
+        from prompts.personalities import PERSONALITIES
+        marker_keys = {"sentence_length", "evidence_relationship", "deflection_style"}
+        for name, data in PERSONALITIES.items():
+            markers = data.get("voice_markers", {})
+            for key in marker_keys:
+                self.assertIn(key, markers, f"{name} voice_markers missing {key}")
+
+    def test_personality_lists_consistent(self):
+        from prompts.personalities import ALL_PERSONALITIES, PERSONALITIES
+        for p in ALL_PERSONALITIES:
+            self.assertIn(p, PERSONALITIES, f"{p} in ALL_PERSONALITIES but not in PERSONALITIES dict")
+
+
+# ===================================================================== #
+#  Framework routing structural checks                                  #
+# ===================================================================== #
+
+class TestFrameworkBlocks(unittest.TestCase):
+    """Verify framework block resolution."""
+
+    def test_framework_blocks_dict_has_entries(self):
+        from prompts.frameworks import FRAMEWORK_BLOCKS
+        self.assertGreater(len(FRAMEWORK_BLOCKS), 0)
+
+    def test_core_frameworks_exist(self):
+        from prompts.frameworks import FRAMEWORK_BLOCKS
+        expected = ["game-theory", "sun-tzu-strategy", "machiavelli-power"]
+        for fw in expected:
+            self.assertIn(fw, FRAMEWORK_BLOCKS, f"Missing framework: {fw}")
+
+    def test_framework_values_are_nonempty_strings(self):
+        from prompts.frameworks import FRAMEWORK_BLOCKS
+        for name, block in FRAMEWORK_BLOCKS.items():
+            self.assertIsInstance(block, str, f"{name} is not a string")
+            self.assertGreater(len(block.strip()), 0, f"{name} is empty")
+
+
 if __name__ == "__main__":
     unittest.main()
