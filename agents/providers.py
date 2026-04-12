@@ -48,7 +48,7 @@ class BeliefStateProvider(ContextProvider):
         self,
         *,
         agent: SupportsAgentRun,
-        session: AgentSession | None,
+        session: AgentSession,
         context: SessionContext,
         state: dict[str, Any],
     ) -> None:
@@ -155,7 +155,7 @@ class CrossGameMemoryProvider(ContextProvider):
         self,
         *,
         agent: SupportsAgentRun,
-        session: AgentSession | None,
+        session: AgentSession,
         context: SessionContext,
         state: dict[str, Any],
     ) -> None:

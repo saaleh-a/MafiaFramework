@@ -1505,5 +1505,126 @@ class TestDiplomaticParasiteTier2(unittest.TestCase):
         self.assertIn("TheParasite", seen)
 
 
+# ======================================================================== #
+#  MAF 1.0 API Compatibility Tests                                          #
+# ======================================================================== #
+
+class TestMAF10MessageAPI(unittest.TestCase):
+    """Verify Message construction uses contents=[] (not deprecated text=)."""
+
+    def test_message_rejects_text_kwarg(self):
+        """MAF 1.0 removed Message(text=...) — must use contents=[]."""
+        from agent_framework import Message
+        with self.assertRaises(TypeError):
+            Message(role="user", text="hello")
+
+    def test_message_accepts_contents(self):
+        """Message(contents=[...]) is the MAF 1.0 pattern."""
+        from agent_framework import Message
+        msg = Message(role="user", contents=["hello"])
+        self.assertEqual(msg.text, "hello")
+
+    def test_middleware_message_uses_contents(self):
+        """Corporate-speak middleware creates messages with contents=[]."""
+        from agents.middleware import CORPORATE_ENFORCEMENT_HINT
+        from agent_framework import Message
+        # Reproduce the pattern used in middleware.py:120
+        msg = Message(role="user", contents=[CORPORATE_ENFORCEMENT_HINT])
+        self.assertIn("CORPORATE MEMO", msg.text)
+
+
+class TestMAF10ProviderSignature(unittest.TestCase):
+    """ContextProvider.before_run session param matches MAF 1.0 base class."""
+
+    def test_belief_provider_session_not_optional(self):
+        """BeliefStateProvider.before_run session type matches base class."""
+        import inspect
+        from agents.providers import BeliefStateProvider
+        from agent_framework import ContextProvider
+
+        base_sig = inspect.signature(ContextProvider.before_run)
+        child_sig = inspect.signature(BeliefStateProvider.before_run)
+
+        base_session = base_sig.parameters["session"]
+        child_session = child_sig.parameters["session"]
+
+        # Both should have the same annotation type
+        self.assertEqual(
+            str(base_session.annotation),
+            str(child_session.annotation),
+            "BeliefStateProvider.before_run session type must match "
+            "ContextProvider base class (AgentSession, not Optional)",
+        )
+
+    def test_memory_provider_session_not_optional(self):
+        """CrossGameMemoryProvider.before_run session type matches base class."""
+        import inspect
+        from agents.providers import CrossGameMemoryProvider
+        from agent_framework import ContextProvider
+
+        base_sig = inspect.signature(ContextProvider.before_run)
+        child_sig = inspect.signature(CrossGameMemoryProvider.before_run)
+
+        base_session = base_sig.parameters["session"]
+        child_session = child_sig.parameters["session"]
+
+        self.assertEqual(
+            str(base_session.annotation),
+            str(child_session.annotation),
+            "CrossGameMemoryProvider.before_run session type must match "
+            "ContextProvider base class (AgentSession, not Optional)",
+        )
+
+
+class TestMAF10DependencyVersions(unittest.TestCase):
+    """Verify installed MAF packages are 1.0+ (stable GA)."""
+
+    def test_core_version_is_stable(self):
+        """agent-framework-core must be >=1.0.0."""
+        import importlib.metadata
+        version_str = importlib.metadata.version("agent-framework-core")
+        parts = version_str.split(".")
+        major = int(parts[0])
+        self.assertGreaterEqual(major, 1, f"agent-framework-core {version_str} is pre-1.0")
+
+    def test_foundry_version_is_stable(self):
+        """agent-framework-foundry must be >=1.0.0."""
+        import importlib.metadata
+        version_str = importlib.metadata.version("agent-framework-foundry")
+        parts = version_str.split(".")
+        major = int(parts[0])
+        self.assertGreaterEqual(major, 1, f"agent-framework-foundry {version_str} is pre-1.0")
+
+
+class TestMAF10ImportPaths(unittest.TestCase):
+    """Verify all MAF imports use the correct 1.0 paths."""
+
+    def test_foundry_client_import(self):
+        """FoundryChatClient comes from agent_framework.foundry."""
+        from agent_framework.foundry import FoundryChatClient
+        self.assertIsNotNone(FoundryChatClient)
+
+    def test_agent_import(self):
+        """Agent comes from agent_framework (not deprecated path)."""
+        from agent_framework import Agent
+        self.assertIsNotNone(Agent)
+
+    def test_session_import(self):
+        """AgentSession uses session= API (not thread=)."""
+        import inspect
+        from agent_framework import Agent
+        sig = inspect.signature(Agent.run)
+        self.assertIn("session", sig.parameters)
+        self.assertNotIn("thread", sig.parameters)
+
+    def test_no_deprecated_azure_client(self):
+        """AzureOpenAIResponsesClient must NOT be importable (deprecated)."""
+        try:
+            from agent_framework.azure import AzureOpenAIResponsesClient
+            self.fail("AzureOpenAIResponsesClient should not exist in MAF 1.0")
+        except (ImportError, AttributeError):
+            pass  # Expected — deprecated class removed
+
+
 if __name__ == "__main__":
     unittest.main()
