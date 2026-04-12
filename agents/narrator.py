@@ -25,4 +25,7 @@ class NarratorAgent:
             f"{game_state.get_omniscient_state_summary()}\n\n"
             f"Task: {prompt}"
         )
-        return await run_agent_stream(self.agent, context, session=self.session)
+        reasoning, action, new_session = await run_agent_stream(self.agent, context, session=self.session)
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action

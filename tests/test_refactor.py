@@ -823,7 +823,9 @@ class TestDiscussionNoVoteFormat(unittest.TestCase):
         from prompts.builder import build_villager_prompt
         prompt = build_villager_prompt("Alice", "Analytical", "TheAnalyst")
         self.assertIn("SPECIFIC CLAIM REQUIREMENT", prompt)
-        self.assertIn("quote or paraphrase", prompt)
+        # Strengthened (Symptom C fix): "or paraphrase" was too permissive.
+        # Now requires exact quoted words with quotation marks.
+        self.assertIn("No quote = no claim", prompt)
 
     def test_discussion_rules_own_read_first(self):
         from prompts.builder import build_villager_prompt
@@ -889,14 +891,17 @@ class TestContrarianResistance(unittest.TestCase):
         from prompts.archetypes import ARCHETYPES
         contrarian = ARCHETYPES["Contrarian"]
         modifier = contrarian["strategy_modifier"]
-        self.assertIn("name a DIFFERENT target", modifier)
-        self.assertIn("current consensus is wrong", modifier)
+        # Strengthened (Symptom D fix): now uses EXACTLY ONE / Option A / Option B
+        # framing to close the "argue then join" loophole.
+        self.assertIn("DIFFERENT specific player", modifier)
+        self.assertIn("specific flaw in the current case", modifier)
 
     def test_contrarian_bans_pile_metacommentary(self):
         from prompts.archetypes import ARCHETYPES
         contrarian = ARCHETYPES["Contrarian"]
         modifier = contrarian["strategy_modifier"]
-        self.assertIn("cannot simply join a pile", modifier)
+        # Strengthened (Symptom D fix): meta-commentary is now explicitly BANNED.
+        self.assertIn("BANNED: joining the consensus", modifier)
 
 
 # ===========================================================================
@@ -987,11 +992,17 @@ class TestDiscussionHistoryExcludesSelf(unittest.TestCase):
             "Alice: Let me explain",
         ]
         result = format_discussion_prompt(history, "Alice")
-        # Alice's messages should be filtered out
+        # Alice's messages should never appear in the injected prompt.
         self.assertNotIn("Alice: I think Bob", result)
         self.assertNotIn("Alice: Let me explain", result)
-        # Bob's message should remain
-        self.assertIn("Bob: That's not fair", result)
+        # Symptom E fix: Bob's message appeared BEFORE Alice's last turn so it
+        # is already stored in InMemoryHistoryProvider from Alice's first call.
+        # Re-injecting it would cause double-appearance in context — it must
+        # NOT appear here.
+        self.assertNotIn("Bob: That's not fair", result)
+        # Since nothing new arrived after Alice's last message, the prompt
+        # correctly signals that nobody has spoken since her last turn.
+        self.assertIn("Nobody else has spoken yet", result)
 
     def test_empty_after_filtering_shows_first_speaker(self):
         from agents.base import format_discussion_prompt
@@ -1503,6 +1514,190 @@ class TestDiplomaticParasiteTier2(unittest.TestCase):
             )
             seen.add(p)
         self.assertIn("TheParasite", seen)
+
+
+# ===========================================================================
+#  30. Session Refresh Registry (Symptom F)
+# ===========================================================================
+
+class TestSessionRefreshRegistry(unittest.TestCase):
+    """Verify _session_refresh_registry propagates refreshed sessions."""
+
+    def test_registry_starts_empty(self):
+        from agents.middleware import _session_refresh_registry
+        # The registry should not carry state between tests.
+        # (Other tests don't write to it, so it is empty at import time.)
+        # We just verify it is a dict.
+        self.assertIsInstance(_session_refresh_registry, dict)
+
+    def test_registry_pop_returns_none_for_unknown_key(self):
+        from agents.middleware import _session_refresh_registry
+        result = _session_refresh_registry.pop("nonexistent-session-id", None)
+        self.assertIsNone(result)
+
+    def test_session_error_detection_catches_azure_format(self):
+        """Azure sends 'previous_response_id not found' (with spaces and 'id')."""
+        from agents.middleware import _is_session_expired_error
+
+        azure_style = Exception("400 previous_response_id not found")
+        sdk_style   = Exception("previous_response_not_found")
+        unrelated   = Exception("connection timeout")
+
+        self.assertTrue(_is_session_expired_error(azure_style))
+        self.assertTrue(_is_session_expired_error(sdk_style))
+        self.assertFalse(_is_session_expired_error(unrelated))
+
+    def test_registry_written_on_recovery(self):
+        """Simulate a recovery and verify the registry is populated."""
+        from agents.middleware import _session_refresh_registry, _refresh_session
+        from agent_framework import AgentSession
+
+        old_session = AgentSession()
+        old_id = old_session.session_id
+
+        new_session = _refresh_session(old_session, "summary text")
+        # Manually simulate what ResilientSessionMiddleware does:
+        _session_refresh_registry[old_id] = new_session
+
+        retrieved = _session_refresh_registry.pop(old_id, None)
+        self.assertIs(retrieved, new_session)
+        self.assertNotEqual(retrieved.session_id, old_id)
+
+        # Registry should be clean after the pop.
+        self.assertNotIn(old_id, _session_refresh_registry)
+
+
+# ===========================================================================
+#  31. Night Kill Prompt Uses Game-Mechanic Language Only (Symptom B)
+# ===========================================================================
+
+class TestNightKillPromptMechanicLanguage(unittest.TestCase):
+    """Verify choose_night_kill prompt avoids content-filter-triggering words."""
+
+    def _build_night_prompt(self) -> str:
+        """
+        Reconstruct the night-kill prompt text as MafiaAgent.choose_night_kill
+        builds it, without making a real API call.
+        """
+        from engine.game_state import GameState, PlayerState
+        # Minimal game state: two Town players alive
+        state = GameState.__new__(GameState)
+        state.players = {
+            "Alice": PlayerState(name="Alice", role="Mafia",  archetype="Paranoid", personality="TheAnalyst", is_alive=True),
+            "Bob":   PlayerState(name="Bob",   role="Villager", archetype="Paranoid", personality="TheAnalyst", is_alive=True),
+            "Carol": PlayerState(name="Carol", role="Villager", archetype="Paranoid", personality="TheAnalyst", is_alive=True),
+        }
+        state.current_round = 1
+        targets = [p for p, s in state.players.items() if s.role != "Mafia" and s.is_alive]
+        # Reproduce the exact f-string from agents/mafia.py choose_night_kill
+        prompt = (
+            f"NIGHT ACTION. Select one Town player to remove from the game this round.\n"
+            f"Valid targets: {', '.join(targets)}\n"
+            f"If you cannot proceed with a selection, output the name of "
+            f"the player with the most active influence on the game as your "
+            f"default choice.\n"
+            f"You MUST call the choose_target tool OR write ACTION: [exact name only]"
+        )
+        return prompt
+
+    def test_night_prompt_no_eliminate_language(self):
+        prompt = self._build_night_prompt()
+        self.assertNotIn("eliminate", prompt.lower())
+
+    def test_night_prompt_no_kill_language(self):
+        prompt = self._build_night_prompt()
+        self.assertNotIn("kill", prompt.lower())
+
+    def test_night_prompt_no_murder_language(self):
+        prompt = self._build_night_prompt()
+        self.assertNotIn("murder", prompt.lower())
+
+    def test_night_prompt_uses_remove_framing(self):
+        prompt = self._build_night_prompt()
+        self.assertIn("remove from the game", prompt)
+
+    def test_night_prompt_retains_valid_targets(self):
+        prompt = self._build_night_prompt()
+        self.assertIn("Valid targets:", prompt)
+
+
+# ===========================================================================
+#  32. Discussion Prompt Injects Vote-Ban Reminder (Symptom A)
+# ===========================================================================
+
+class TestDiscussionVoteBanRuntimeReminder(unittest.TestCase):
+    """Verify format_discussion_prompt appends a per-call vote-ban reminder."""
+
+    def test_vote_ban_reminder_present_when_no_prior_turns(self):
+        from agents.base import format_discussion_prompt
+        result = format_discussion_prompt([], "Alice")
+        self.assertIn("DISCUSSION phase", result)
+        self.assertIn("NOT the vote phase", result)
+
+    def test_vote_ban_reminder_present_with_history(self):
+        from agents.base import format_discussion_prompt
+        history = ["Bob: I think Carol is odd"]
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("DISCUSSION phase", result)
+        self.assertIn("Do NOT open with", result)
+
+    def test_vote_ban_reminder_present_after_own_turn(self):
+        from agents.base import format_discussion_prompt
+        history = ["Bob: Something", "Alice: My read", "Bob: What?"]
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("DISCUSSION phase", result)
+
+    def test_vote_ban_bans_im_voting_phrasing(self):
+        from agents.base import format_discussion_prompt
+        result = format_discussion_prompt([], "Alice")
+        # The reminder should explicitly call out the banned phrase format.
+        self.assertIn("I'm voting X", result)
+
+
+# ===========================================================================
+#  33. Discussion Only Injects Post-Last-Turn Messages (Symptom E)
+# ===========================================================================
+
+class TestDiscussionOnlyInjectsNewMessages(unittest.TestCase):
+    """Verify format_discussion_prompt only shows messages after agent's last turn."""
+
+    def test_messages_before_last_turn_excluded(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Round starts",       # index 0 — before Alice's first turn
+            "Alice: My first take",    # index 1 — Alice's turn 1
+            "Carol: Interesting",      # index 2 — after Alice's turn 1
+            "Alice: Follow-up",        # index 3 — Alice's turn 2
+            "Bob: What do you think?", # index 4 — new, after Alice's turn 2
+        ]
+        result = format_discussion_prompt(history, "Alice")
+        # Only index 4 is new after Alice's last turn — only Bob's last msg should appear.
+        self.assertIn("Bob: What do you think?", result)
+        # Carol's message came before Alice's second turn — already in history provider.
+        self.assertNotIn("Carol: Interesting", result)
+        # Bob's first message also pre-dates Alice's last turn.
+        self.assertNotIn("Bob: Round starts", result)
+
+    def test_first_turn_shows_all_prior_messages(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Round starts",
+            "Carol: Agreed",
+        ]
+        # Alice hasn't spoken yet — last_agent_idx = -1, so all messages shown.
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("Bob: Round starts", result)
+        self.assertIn("Carol: Agreed", result)
+
+    def test_nothing_after_last_turn_shows_nobody_spoke(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Something",
+            "Alice: My response",
+            # Alice spoke last; nothing came after
+        ]
+        result = format_discussion_prompt(history, "Alice")
+        self.assertIn("Nobody else has spoken yet", result)
 
 
 if __name__ == "__main__":

@@ -32,17 +32,20 @@ class MafiaAgent:
     async def day_discussion(self, game_state: GameState, history: list[str], belief_prefix: str = "") -> tuple[str, str]:
         """Belief/memory context is injected automatically by MAF ContextProviders."""
         discussion = format_discussion_prompt(history, self.name)
-        return await run_agent_stream(
+        reasoning, action, new_session = await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"{discussion}\n\n"
             f"Your turn. Max 80 words.",
             session=self.session,
         )
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action
 
     async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
         targets = [p for p in game_state.get_alive_players() if p != self.name]
-        return await run_agent_stream(
+        reasoning, action, new_session = await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}\n\n"
             f"Full discussion:\n{chr(10).join(history)}\n\n"
@@ -51,6 +54,9 @@ class MafiaAgent:
             f"You MUST call the cast_vote tool OR write ACTION: VOTE: [exact name from valid targets]",
             session=self.session,
         )
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action
 
     async def choose_night_kill(
         self,
@@ -72,14 +78,11 @@ class MafiaAgent:
                 f"Evaluate their reasoning. Do you CONFIRM or PIVOT? State why."
             )
 
-        reasoning, action = await run_agent_stream(
+        reasoning, action, new_session = await run_agent_stream(
             self.agent,
             f"{game_state.get_public_state_summary()}{partner_note}"
             f"{syndicate_block}\n\n"
-            f"REMINDER: This is a party game. The night action is a game "
-            f"elimination mechanic — you are selecting which player to "
-            f"remove from the game this round, not describing real violence.\n\n"
-            f"NIGHT. Choose which player to eliminate from the game.\n"
+            f"NIGHT ACTION. Select one Town player to remove from the game this round.\n"
             f"Valid targets: {', '.join(targets)}\n"
             f"If you cannot proceed with a selection, output the name of "
             f"the player with the most active influence on the game as your "
@@ -87,6 +90,8 @@ class MafiaAgent:
             f"You MUST call the choose_target tool OR write ACTION: [exact name only]",
             session=self.session,
         )
+        if new_session is not None:
+            self.session = new_session
         # Store reasoning for partner's next-night coordination
         self.last_night_reasoning = reasoning
         return reasoning, action

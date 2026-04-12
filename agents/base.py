@@ -6,31 +6,46 @@ import logging
 
 from agent_framework import AgentSession
 from prompts.archetypes import CORPORATE_WORDS
-from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT
+from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT, _session_refresh_registry
 from agents.rate_limiter import rate_limited_call, _is_rate_limit_error, _is_timeout_error
 from config.settings import MAFIA_ENABLE_STREAMING_FALLBACK
 
 logger = logging.getLogger(__name__)
 
 
+# Runtime reminder appended to every discussion prompt (Symptom A fix).
+# DISCUSSION_RULES covers this in the system prompt but agents still open
+# with vote declarations — a per-call reminder eliminates the gap.
+_VOTE_BAN_REMINDER = (
+    "\nREMINDER: DISCUSSION phase — NOT the vote phase. "
+    "Do NOT open with 'I'm voting X', 'I vote X', or any vote declaration. "
+    "Your response must be conversational argument, challenge, or question."
+)
+
+
 def format_discussion_prompt(history: list[str], agent_name: str) -> str:
     """
     Format discussion history to encourage conversational responses.
 
-    ARCHITECTURE: The injected discussion_history contains ONLY other
-    agents' messages from the current round's discussion. The agent's
-    own prior turns are handled by InMemoryHistoryProvider and do not
-    appear here. This avoids redundancy and context confusion.
+    ARCHITECTURE: Only messages that appeared AFTER the agent's own most
+    recent contribution are injected. Messages before that are already
+    stored in InMemoryHistoryProvider from the previous call — re-injecting
+    them causes other agents' statements to appear twice in context (Symptom E).
 
     Separates the last message from earlier discussion so the agent
     knows exactly who just spoke and what they said — making it natural
     to respond TO that person rather than monologuing past them.
     """
-    # Filter out this agent's own messages — their history provider
-    # already supplies their own prior turns.
-    others_history = [
-        h for h in history if not h.startswith(f"{agent_name}:")
-    ]
+    # Find the index of the agent's most recent contribution.
+    # Everything at or before that index is already in InMemoryHistoryProvider.
+    last_agent_idx = -1
+    for i, h in enumerate(history):
+        if h.startswith(f"{agent_name}:"):
+            last_agent_idx = i
+
+    # Only inject messages that arrived after the agent's last turn.
+    new_messages = history[last_agent_idx + 1:]
+    others_history = [h for h in new_messages if not h.startswith(f"{agent_name}:")]
 
     if not others_history:
         return (
@@ -38,6 +53,7 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
             "Nobody else has spoken yet. You are first.\n"
             "Pick someone by name and ask them a direct question, "
             "or throw out a concrete suspicion with a reason."
+            + _VOTE_BAN_REMINDER
         )
 
     if len(others_history) == 1:
@@ -47,6 +63,7 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
             f"{others_history[0]}\n\n"
             f"^ {last_speaker} just spoke. "
             f"Respond directly to what they said."
+            + _VOTE_BAN_REMINDER
         )
 
     earlier = "\n".join(others_history[:-1])
@@ -58,6 +75,7 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
         f"LAST MESSAGE (respond to this):\n{last}\n\n"
         f"^ {last_speaker} just said that. Talk TO them. "
         f"Agree, disagree, ask a follow-up, or challenge them directly."
+        + _VOTE_BAN_REMINDER
     )
 
 
@@ -177,9 +195,14 @@ async def run_agent_stream(
     session: AgentSession | None = None,
     *,
     player_name: str = "unknown",
-) -> tuple[str, str]:
+) -> tuple[str, str, AgentSession | None]:
     """
-    Run an agent with streaming and return (reasoning, action).
+    Run an agent with streaming and return (reasoning, action, session).
+
+    The third element is the refreshed AgentSession if ResilientSession-
+    Middleware rebuilt the session due to a ``previous_response_id not found``
+    error, otherwise None. Callers MUST update self.session when non-None
+    so the next call does not re-trigger a recovery.
 
     When *session* is provided, MAF persists all messages (inputs and
     outputs) in the session's in-memory history.  This gives the agent
@@ -200,6 +223,17 @@ async def run_agent_stream(
     Rate limiting: all API calls go through the global semaphore via
     rate_limited_call(), which handles 429 backoff automatically.
     """
+    # Capture the session id before the call so we can look up any
+    # replacement that ResilientSessionMiddleware registered.
+    original_session_id: str | None = (
+        session.session_id if session is not None else None
+    )
+
+    def _get_refreshed() -> AgentSession | None:
+        """Pop and return a refreshed session if middleware replaced it."""
+        if original_session_id is None:
+            return None
+        return _session_refresh_registry.pop(original_session_id, None)
 
     async def _do_stream_call() -> str:
         """Single streaming API call — returns the concatenated text."""
@@ -234,7 +268,7 @@ async def run_agent_stream(
             tool_result = _extract_tool_result(full_text)
             if tool_result:
                 reasoning, _ = parse_reasoning_action(full_text)
-                return reasoning, tool_result
+                return reasoning, tool_result, _get_refreshed()
 
             reasoning, action = parse_reasoning_action(full_text)
 
@@ -254,7 +288,7 @@ async def run_agent_stream(
                 prompt = CORPORATE_ENFORCEMENT_HINT + "\n\n" + prompt
                 continue
 
-            return reasoning, action
+            return reasoning, action, _get_refreshed()
         except Exception as exc:
             # Streaming fallback: retry as non-streaming on rate-limit
             if (
@@ -275,8 +309,9 @@ async def run_agent_stream(
                     tool_result = _extract_tool_result(full_text)
                     if tool_result:
                         reasoning, _ = parse_reasoning_action(full_text)
-                        return reasoning, tool_result
-                    return parse_reasoning_action(full_text)
+                        return reasoning, tool_result, _get_refreshed()
+                    r, a = parse_reasoning_action(full_text)
+                    return r, a, _get_refreshed()
                 except Exception:
                     pass  # Fall through to normal error handling
 
@@ -284,7 +319,7 @@ async def run_agent_stream(
             raise
 
     # Should not reach here, but satisfy the type checker:
-    return "", ""
+    return "", "", _get_refreshed()
 
 
 def _handle_api_error(exc: Exception) -> None:
