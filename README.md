@@ -14,6 +14,9 @@ An AI-powered simulation of the social deduction game **Mafia**, built on the [M
 - [Personalities](#personalities)
 - [Combination Constraints](#combination-constraints)
 - [Agent Intelligence Systems](#agent-intelligence-systems)
+- [Rate Limiting](#rate-limiting)
+- [Session Resilience](#session-resilience)
+- [Graceful Degradation](#graceful-degradation)
 - [Prompt Engineering](#prompt-engineering)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
@@ -97,7 +100,8 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
          │  engine/orchestrator.py   │
          │  Game loop: day/night     │
          │  phases, belief tracking, │
-         │  win detection            │
+         │  win detection, graceful  │
+         │  degradation fallbacks    │
          └──┬──────────┬─────────┬───┘
             │          │         │
     ┌───────▼──┐ ┌─────▼───┐ ┌──▼────────┐
@@ -108,9 +112,24 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
     │ belief,  │ │         │ │ Builder   │
     │ memory,  │ │         │ │           │
     │ tools    │ │         │ │           │
-    └──────────┘ └─────────┘ └───────────┘
-            │
-    ┌───────▼──────────┐
+    └──┬───────┘ └─────────┘ └───────────┘
+       │
+    ┌──▼───────────────────────────────┐
+    │  agents/middleware.py            │
+    │  ResilientSession → RateLimit → │
+    │  CorporateSpeak → Reasoning →   │
+    │  BeliefUpdate middleware chain   │
+    │  + SessionHealthMonitor          │
+    └──┬───────────────────────────────┘
+       │
+    ┌──▼───────────────┐
+    │ agents/           │
+    │ rate_limiter.py   │
+    │ Global semaphore, │
+    │ backoff, retries  │
+    └──┬───────────────┘
+       │
+    ┌──▼──────────────┐
     │ config/          │
     │ model_registry   │
     │ settings         │
@@ -130,7 +149,8 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
 | `agents/belief_state.py`     | Suspicion tracking per agent, overconfidence gating, staleness detection, BeliefGraph scum-tell detection, temporal consistency checking. |
 | `agents/summary.py`          | SummaryAgent — generates low-cognitive-load narrative summaries with recency-weighted target identification. |
 | `agents/providers.py`        | MAF ContextProviders — `BeliefStateProvider` and `CrossGameMemoryProvider` inject dynamic context into each agent call. |
-| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` (slang enforcement), `ReasoningActionMiddleware` (REASONING/ACTION parsing), `BeliefUpdateMiddleware` (BELIEF_UPDATE extraction). |
+| `agents/rate_limiter.py`     | Two-tier rate limiting — global asyncio semaphore, exponential backoff with jitter, error-aware retry logic (429 retry, 5xx fail fast, timeout retry once). |
+| `agents/middleware.py`       | MAF middleware — `ResilientSessionMiddleware` (session recovery), `RateLimitMiddleware` (429 handling + proactive refresh), `corporate_speak_middleware` (slang enforcement), `ReasoningActionMiddleware` (REASONING/ACTION parsing), `BeliefUpdateMiddleware` (BELIEF_UPDATE extraction), `SessionHealthMonitor` (per-session idle tracking). |
 | `agents/game_tools.py`       | MAF `@tool`-decorated functions — `cast_vote` and `choose_target` for structured game actions. |
 | `agents/memory.py`           | Persistent cross-game memory — role-aware learnings stored as JSON, loaded each game.        |
 | `agents/narrator.py`         | Narrator agent — omniscient, impartial game master announcements.                            |
@@ -161,7 +181,8 @@ MafiaFramework/
 │   ├── belief_state.py         # Suspicion tracking, BeliefGraph, temporal checks
 │   ├── summary.py              # SummaryAgent — narrative summaries per phase
 │   ├── providers.py            # MAF ContextProviders (belief + memory injection)
-│   ├── middleware.py           # MAF middleware (corporate-speak, REASONING/ACTION parsing, belief updates)
+│   ├── middleware.py           # MAF middleware (session resilience, rate limiting, corporate-speak, REASONING/ACTION parsing, belief updates)
+│   ├── rate_limiter.py         # Two-tier rate limiting (semaphore + backoff + error classification)
 │   ├── game_tools.py           # @tool-decorated game actions (vote, target)
 │   ├── memory.py               # Cross-game persistent memory
 │   ├── narrator.py             # Narrator agent
@@ -187,7 +208,7 @@ MafiaFramework/
 │   └── personalities.py        # Performance personality definitions
 ├── tests/
 │   ├── __init__.py
-│   └── test_refactor.py        # 63 tests across 19 test classes
+│   └── test_refactor.py        # 149 tests across 41 test classes
 └── memory/                     # Cross-game learnings (gitignored)
 ```
 
@@ -239,6 +260,7 @@ Each player also receives a **personality** — a performance layer that governs
 
 Each personality includes:
 - A **register** defining energy, cadence, and sentence rhythm
+- **Voice markers** — structured descriptors for `sentence_length`, `evidence_relationship`, and `deflection_style` that anchor the LLM's tone (e.g. TheGhost: "Short and punchy. Silence is a sentence."; TheAnalyst: "Long and winding. Gets longer when frustrated.")
 - **Prohibited phrases** that this voice must never produce
 - **Example dialogue** (5 lines) showing the voice in practice
 - **When accused** responses (3 lines) for when directly targeted
@@ -370,10 +392,15 @@ Agents use MAF-native structured actions:
 - `cast_vote` — Submit a vote during day phase
 - `choose_target` — Select a target during night phase
 
-Three middleware components run on every player agent:
-- **`corporate_speak_middleware`** — If an agent's action contains 3+ corporate/boardroom words, the response is re-invoked with a slang enforcement hint.
-- **`ReasoningActionMiddleware`** — Parses the `REASONING:`/`ACTION:` split from every response and stores parsed values on `context.metadata` so the orchestrator can read them cleanly.
-- **`BeliefUpdateMiddleware`** — Extracts `BELIEF_UPDATE` tags from reasoning text and stores the parsed updates on `context.metadata` for automatic belief state application.
+Five middleware components run on every player agent (outermost to innermost):
+
+1. **`ResilientSessionMiddleware`** — Catches `previous_response_not_found` errors when server-side sessions expire. Extracts conversation history from `InMemoryHistoryProvider`, creates a fresh `AgentSession` with transferred state, and injects a compressed history summary. Registered first so it wraps all other middleware.
+2. **`RateLimitMiddleware`** — Handles 429 rate-limit errors with exponential backoff and jitter. Also performs **proactive** session refresh: before each call, if the session has been idle longer than `MAFIA_SESSION_IDLE_THRESHOLD` (default 20 s), the session is refreshed pre-emptively. During backoff, if cumulative delay exceeds `MAFIA_SESSION_REFRESH_THRESHOLD` (default 25 s), a mid-backoff refresh fires.
+3. **`corporate_speak_middleware`** — If an agent's action contains 3+ corporate/boardroom words, the response is re-invoked with a slang enforcement hint.
+4. **`ReasoningActionMiddleware`** — Parses the `REASONING:`/`ACTION:` split from every response and stores parsed values on `context.metadata` so the orchestrator can read them cleanly.
+5. **`BeliefUpdateMiddleware`** — Extracts `BELIEF_UPDATE` tags from reasoning text and stores the parsed updates on `context.metadata` for automatic belief state application.
+
+A static **`SessionHealthMonitor`** tracks per-session idle time (via `touch()` / `idle_seconds()` / `remove()`) to support proactive refresh decisions.
 
 ### Multi-Turn Conversational Memory
 
@@ -381,7 +408,87 @@ Each player agent includes an `InMemoryHistoryProvider` from the MAF framework. 
 
 ### Iroh Protocol
 
-When other agents' collective suspicion of a Detective or Doctor exceeds the self-preservation threshold (0.45), the system instructs them to reveal their role to survive. A dead Detective/Doctor helps nobody.
+When other agents' collective suspicion of a Detective or Doctor rises, a graduated identity-reveal system fires:
+
+| Level          | Avg Suspicion Threshold | Behaviour                                                       |
+|----------------|------------------------|-----------------------------------------------------------------|
+| **Soft Hint**  | ≥ 0.35                 | Oblique hint — "I have information that would change this vote"  |
+| **Hard Claim** | ≥ 0.45                 | Conditional claim — "I am Detective. If the vote isn't redirected, I reveal everything." |
+| **Full Reveal**| ≥ 0.55                 | Immediate full reveal with all accumulated findings              |
+
+If the Detective holds a confirmed red-check (proven Mafia finding), all thresholds drop by **0.10** — information preservation outweighs survival risk. The current Iroh level is automatically injected into each agent's context via `BeliefStateProvider`.
+
+---
+
+## Rate Limiting
+
+API calls are rate-limited through two cooperating tiers implemented in `agents/rate_limiter.py`:
+
+### Global Concurrency Limit
+
+A process-wide `asyncio.Semaphore` (default **5** concurrent calls, configurable via `MAFIA_MAX_CONCURRENT_CALLS`) prevents overwhelming the Azure endpoint. The semaphore is lazily created to bind to the active event loop. A secondary per-phase semaphore in the orchestrator (`max(2, MAFIA_MAX_CONCURRENT_CALLS - 1)`) ensures at least two slots remain available under heavy rate limiting.
+
+### Error-Aware Retry Logic
+
+| Error Type | Retry Behaviour                                     |
+|------------|-----------------------------------------------------|
+| **429**    | Retry up to `MAFIA_RATE_LIMIT_RETRIES` times (default 3) with exponential backoff |
+| **5xx**    | Fail immediately — server errors are unlikely to self-heal fast enough |
+| **Timeout**| Retry once                                           |
+| **Other**  | Propagate immediately                                |
+
+### Exponential Backoff
+
+Delay is computed as `base × 2^attempt`, capped at **8 s**, with full jitter (+0–0.5 s). The base delay defaults to **1.0 s** (`MAFIA_BACKOFF_BASE_DELAY`). Per-player retry counters are tracked for observability via `get_retry_stats()`.
+
+---
+
+## Session Resilience
+
+Azure Foundry server-side sessions can expire under load or idle time. Three components in `agents/middleware.py` cooperate to prevent and recover from session loss:
+
+### ResilientSessionMiddleware
+
+Catches `previous_response_not_found` errors (server-side TTL expiry). When triggered:
+1. Extracts conversation history from `InMemoryHistoryProvider`'s internal cache.
+2. Creates a fresh `AgentSession` with all state transferred.
+3. Injects a compressed text summary of recent messages (truncated to 200 chars per message) so the agent retains conversational context.
+4. Registers the replacement session in `_session_refresh_registry` so the orchestrator's `run_agent_stream()` can pick up the new session transparently.
+
+Must be registered **first** in the middleware chain to wrap all other middleware.
+
+### RateLimitMiddleware
+
+In addition to handling 429 errors (see [Rate Limiting](#rate-limiting)), this middleware performs **proactive** session refresh:
+- **Pre-call:** If the session has been idle longer than `MAFIA_SESSION_IDLE_THRESHOLD` (default 20 s), the session is refreshed before the API call fires.
+- **Mid-backoff:** If cumulative backoff delay exceeds `MAFIA_SESSION_REFRESH_THRESHOLD` (default 25 s), a refresh fires during the backoff window.
+
+This prevents session expiry rather than only recovering from it.
+
+### SessionHealthMonitor
+
+A static utility class that tracks per-session timestamps:
+- `touch(session_id)` — Record a successful call.
+- `idle_seconds(session_id)` — Seconds since last call.
+- `remove(session_id)` — Clean up on session destruction.
+
+Used by `RateLimitMiddleware` to decide whether proactive refresh is needed.
+
+---
+
+## Graceful Degradation
+
+When an API call fails entirely (after all retries are exhausted), the orchestrator falls back to heuristic actions so the game can continue without crashing. Fallbacks are implemented per phase in `engine/orchestrator.py`:
+
+| Phase             | Fallback Behaviour                                                                  |
+|-------------------|-------------------------------------------------------------------------------------|
+| **Discussion**    | Player passes their turn — "I'll listen for now"                                    |
+| **Voting**        | Vote for the player with the highest suspicion in the agent's belief state           |
+| **Mafia Night Kill** | Target the Town player with the lowest suspicion (i.e. highest threat to Mafia)  |
+| **Detective Investigation** | Investigate a random eligible (un-investigated) player                   |
+| **Doctor Protection** | Protect the player with the highest threat score from the belief state. If the Doctor's own suspicion exceeds **0.3**, self-protect instead. |
+
+These fallbacks ensure that a single API failure never kills a game — the affected player simply makes a reasonable heuristic decision for that turn.
 
 ---
 
@@ -433,6 +540,20 @@ When the partner has been eliminated, a fifth question fires: which player is mo
 | **Villager** | Carnegie Villager + Behavioural Psychology + Strategic Glossary + Incentive Reasoning |
 
 All agents output in a structured `REASONING:` / `ACTION:` format. Reasoning represents internal thinking (including optional sparse `BELIEF_UPDATE` tags); only the action is visible to other agents.
+
+### Discussion Rules
+
+Discussion-phase output is governed by two layers of enforcement:
+
+**System prompt (`DISCUSSION_RULES` in `builder.py`)** — a block injected into every player's system prompt:
+- **Not a vote phase** — conversational argument only; no vote declarations
+- **Specific claim requirement** — quote what another player said + explain why it matters
+- **Own read first** — establish your position before reacting to others
+- **Speak obliquely** — imply and deflect, don't narrate your strategy directly
+- **No consensus echoing** — add new evidence or a new angle, never just agree
+- **Show, don't tell** — reactions through action, not declaration
+
+**Runtime reminder (`_VOTE_BAN_REMINDER` in `base.py`)** — appended to every discussion prompt at call time, reminding agents not to open with vote declarations. This dual enforcement (system prompt + per-call reminder) significantly reduces vote-leaking during discussion rounds.
 
 ### Anti-AI Writing
 
@@ -601,6 +722,19 @@ ROLE_DISTRIBUTION = [
 
 The number of player names must match the number of roles.
 
+### Rate Limiting & Session Resilience
+
+These settings are loaded from environment variables (or `.env`) in `config/settings.py`. All have sensible defaults and are optional.
+
+| Variable                           | Default | Description                                                          |
+|------------------------------------|---------|----------------------------------------------------------------------|
+| `MAFIA_MAX_CONCURRENT_CALLS`       | `5`     | Maximum concurrent API calls (clamped 1–10)                          |
+| `MAFIA_RATE_LIMIT_RETRIES`         | `3`     | Retries for 429 rate-limit errors (clamped 1–5)                      |
+| `MAFIA_BACKOFF_BASE_DELAY`         | `1.0`   | Base delay in seconds for exponential backoff (clamped ≥ 0.1)        |
+| `MAFIA_SESSION_IDLE_THRESHOLD`     | `20.0`  | Seconds of idle time before proactive session refresh                 |
+| `MAFIA_SESSION_REFRESH_THRESHOLD`  | `25.0`  | Cumulative backoff delay (seconds) before mid-backoff session refresh |
+| `MAFIA_ENABLE_STREAMING_FALLBACK`  | `false` | Retry failed streaming calls as non-streaming                        |
+
 ---
 
 ## Testing
@@ -611,7 +745,7 @@ The test suite validates core game mechanics without requiring Azure credentials
 python -m unittest tests.test_refactor -v
 ```
 
-**63 tests** across **19 test classes**:
+**149 tests** across **41 test classes**:
 
 | Test Class                         | Tests | Coverage                                                              |
 |------------------------------------|-------|-----------------------------------------------------------------------|
@@ -636,6 +770,29 @@ python -m unittest tests.test_refactor -v
 | `TestInMemoryHistoryProvider`      | 1     | InMemoryHistoryProvider importable and instantiable                    |
 | `TestAllCombinationBans`           | 3     | Tier 1/2/3 bans present in exclusion tables, Tier 2 role specificity  |
 | `TestDiplomaticParasiteTier2`      | 4     | Diplomatic+TheParasite blocked for Detective/Doctor/Mafia, allowed for Villager |
+| `TestDiscussionNoVoteFormat`       | 2     | Discussion phase bans vote declarations in system prompt              |
+| `TestNightKillPromptLanguage`      | 2     | Night kill prompt uses correct language                                |
+| `TestContrarianResistance`         | 2     | Contrarian archetype resists consensus                                 |
+| `TestPersonalityVoiceMarkers`      | 8     | Voice markers (sentence_length, evidence_relationship, deflection_style) present for all 8 personalities |
+| `TestDiscussionHistoryExcludesSelf`| 2     | format_discussion_prompt only injects messages after agent's last contribution |
+| `TestExpandedSlangRegister`        | 2     | GenZ/MLE slang vocabulary present in register                          |
+| `TestSessionExpiredErrorDetection` | 3     | ResilientSessionMiddleware detects session expiry errors               |
+| `TestHistorySummarization`         | 3     | Session history summarization for recovery                             |
+| `TestExtractHistoryFromSession`    | 2     | Extract messages from InMemoryHistoryProvider internal cache           |
+| `TestRefreshSession`               | 2     | Session refresh preserves state and injects summary                    |
+| `TestSessionHealthMonitor`         | 4     | SessionHealthMonitor touch/idle_seconds/remove methods                 |
+| `TestRateLimitErrorDetection`      | 3     | Rate limit error classification (429, 5xx, timeout)                    |
+| `TestConversationContinuity`       | 2     | Agent can reference previous messages across sessions                  |
+| `TestSettingsConfiguration`        | 3     | Environment variable loading for rate limiting and session settings     |
+| `TestSuccessCriteria`              | 1     | Game loop completes without errors                                     |
+| `TestSessionRefreshRegistry`       | 2     | _session_refresh_registry mechanism for transparent session replacement |
+| `TestNightKillPromptMechanicLanguage` | 2  | Night kill prompt mentions "eliminating" / "removing"                  |
+| `TestDiscussionVoteBanRuntimeReminder` | 2 | _VOTE_BAN_REMINDER appended to discussion prompts at runtime           |
+| `TestDiscussionOnlyInjectsNewMessages` | 2 | Only inject messages after agent's last contribution                   |
+| `TestMAF10MessageAPI`              | 3     | MAF 1.0 Message(contents=[]) API compliance                           |
+| `TestMAF10ProviderSignature`       | 2     | MAF 1.0 ContextProvider.before_run(session: AgentSession) signature    |
+| `TestMAF10DependencyVersions`      | 2     | agent-framework-foundry>=1.0.0,<2.0.0 pinned correctly                |
+| `TestMAF10ImportPaths`             | 4     | FoundryChatClient from agent_framework.foundry import paths            |
 
 ---
 
