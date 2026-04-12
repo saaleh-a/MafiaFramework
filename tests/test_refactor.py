@@ -16,6 +16,7 @@ Tests cover:
 
 import re
 import unittest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # We import the actual production modules so the tests validate real behaviour.
@@ -435,6 +436,361 @@ class TestReasoningOnlyParser(unittest.TestCase):
         self.assertEqual(action, "I vote for Bob")
 
 
+class TestToolTraceNormalization(unittest.TestCase):
+    """Verify tool-like text is normalized before game parsing."""
+
+    def test_extract_tool_result_from_cast_vote_trace(self):
+        from agents.base import _extract_tool_result
+
+        text = (
+            "functions.cast_vote\n"
+            "{\"target\":\"Bob\",\"reasoning\":\"Frank and Grace were later in the text.\"}"
+        )
+        self.assertEqual(_extract_tool_result(text), "VOTE: Bob")
+
+    def test_extract_tool_result_from_choose_target_trace(self):
+        from agents.base import _extract_tool_result
+
+        text = (
+            "functions.choose_target\n"
+            "{\"target\":\"Frank\",\"reasoning\":\"I also mentioned Hank and Ivy.\"}"
+        )
+        self.assertEqual(_extract_tool_result(text), "TARGET: Frank")
+
+    def test_vote_parser_prefers_target_field_over_reasoning_mentions(self):
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orchestrator = MafiaGameOrchestrator.__new__(MafiaGameOrchestrator)
+        text = (
+            "functions.cast_vote\n"
+            "{\"target\":\"Bob\",\"reasoning\":\"Frank and Grace are both suspicious too.\"}"
+        )
+        parsed = orchestrator._parse_vote(
+            text,
+            ["Bob", "Frank", "Grace"],
+            "Ivy",
+        )
+        self.assertEqual(parsed, "Bob")
+
+    def test_target_parser_prefers_target_field_over_other_mentions(self):
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        text = (
+            "functions.choose_target\n"
+            "{\"target\":\"Frank\",\"reasoning\":\"I also considered Hank and Ivy.\"}"
+        )
+        parsed = MafiaGameOrchestrator._parse_target(text, ["Frank", "Hank", "Ivy"])
+        self.assertEqual(parsed, "Frank")
+
+    def test_target_parser_can_salvage_reasoning_only_name(self):
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        text = (
+            "Threat 1: Ivy — dangerous. Threat 2: Hank — dangerous. "
+            "The strongest removal is Frank."
+        )
+        parsed = MafiaGameOrchestrator._parse_target(text, ["Frank", "Hank", "Ivy"])
+        self.assertEqual(parsed, "Frank")
+
+
+class TestStructuredToolResponseRecovery(unittest.TestCase):
+    """Verify structured tool outputs survive non-stream serialization."""
+
+    def test_serialize_agent_response_recovers_function_result_content(self):
+        from agent_framework import AgentResponse, Content, Message
+        from agents.base import _serialize_agent_response
+
+        response = AgentResponse(
+            messages=[
+                Message(
+                    "assistant",
+                    [
+                        Content.from_text_reasoning(text="I need to commit now."),
+                        Content.from_function_result("call_1", result="VOTE: Bob"),
+                    ],
+                )
+            ]
+        )
+
+        serialized = _serialize_agent_response(response)
+        self.assertIn("REASONING: I need to commit now.", serialized)
+        self.assertIn("VOTE: Bob", serialized)
+
+    def test_serialize_agent_response_recovers_function_call_arguments(self):
+        from agent_framework import AgentResponse, Content, Message
+        from agents.base import _serialize_agent_response
+
+        response = AgentResponse(
+            messages=[
+                Message(
+                    "assistant",
+                    [
+                        Content.from_function_call(
+                            "call_2",
+                            "cast_vote",
+                            arguments='{\"target\":\"Bob\",\"reasoning\":\"thin lane\"}',
+                        )
+                    ],
+                )
+            ]
+        )
+
+        serialized = _serialize_agent_response(response)
+        self.assertEqual(serialized, "VOTE: Bob")
+
+
+class TestRunAgentStreamSessionRecovery(unittest.IsolatedAsyncioTestCase):
+    """Verify streaming calls recover locally from expired response ids."""
+
+    async def test_prefer_non_stream_uses_non_stream_path(self):
+        from agent_framework import AgentSession
+        import agents.base as base_module
+
+        class FakeNonStreamResult:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+                self.non_stream_calls = 0
+                self.name = "Alice"
+
+            def run(self, prompt, stream=False, session=None):
+                if stream:
+                    self.stream_calls += 1
+
+                    async def iterator():
+                        raise AssertionError("streaming path should not be used")
+                        yield None
+
+                    return iterator()
+
+                self.non_stream_calls += 1
+
+                async def result():
+                    return FakeNonStreamResult("REASONING: decided ACTION: VOTE: Bob")
+
+                return result()
+
+        session = AgentSession()
+        session.state["history"] = {"messages": []}
+        agent = FakeAgent()
+
+        with patch.object(base_module, "MAFIA_ENABLE_STREAMING_FALLBACK", True):
+            reasoning, action, _ = await base_module.run_agent_stream(
+                agent,
+                "prompt",
+                session=session,
+                player_name="Alice",
+                prefer_non_stream=True,
+            )
+
+        self.assertEqual(reasoning, "decided")
+        self.assertEqual(action, "VOTE: Bob")
+        self.assertEqual(agent.stream_calls, 0)
+        self.assertEqual(agent.non_stream_calls, 1)
+
+    async def test_prefer_non_stream_recovers_structured_tool_result(self):
+        from agent_framework import AgentResponse, AgentSession, Content, Message
+        import agents.base as base_module
+
+        class FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+                self.non_stream_calls = 0
+                self.name = "Alice"
+
+            def run(self, prompt, stream=False, session=None):
+                if stream:
+                    self.stream_calls += 1
+
+                    async def iterator():
+                        raise AssertionError("streaming path should not be used")
+                        yield None
+
+                    return iterator()
+
+                self.non_stream_calls += 1
+
+                async def result():
+                    return AgentResponse(
+                        messages=[
+                            Message(
+                                "assistant",
+                                [
+                                    Content.from_text_reasoning(text="I have to land this."),
+                                    Content.from_function_result(
+                                        "call_3",
+                                        result="VOTE: Bob",
+                                    ),
+                                ],
+                            )
+                        ]
+                    )
+
+                return result()
+
+        session = AgentSession()
+        session.state["history"] = {"messages": []}
+        agent = FakeAgent()
+
+        with patch.object(base_module, "MAFIA_ENABLE_STREAMING_FALLBACK", True):
+            reasoning, action, _ = await base_module.run_agent_stream(
+                agent,
+                "prompt",
+                session=session,
+                player_name="Alice",
+                prefer_non_stream=True,
+            )
+
+        self.assertIn("I have to land this.", reasoning)
+        self.assertEqual(action, "VOTE: Bob")
+        self.assertEqual(agent.stream_calls, 0)
+        self.assertEqual(agent.non_stream_calls, 1)
+
+    async def test_streaming_session_expiry_refreshes_and_retries(self):
+        from agent_framework import AgentSession
+        from agents.base import run_agent_stream
+
+        class FakeChunk:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def run(self, prompt, stream=False, session=None):
+                self.calls += 1
+
+                async def iterator():
+                    if self.calls == 1:
+                        raise Exception("previous_response_id not found")
+                    yield FakeChunk("REASONING: recovered ACTION: VOTE: Bob")
+
+                return iterator()
+
+        session = AgentSession()
+        session.state["history"] = {"messages": []}
+        agent = FakeAgent()
+
+        reasoning, action, new_session = await run_agent_stream(
+            agent,
+            "prompt",
+            session=session,
+            player_name="Alice",
+        )
+
+        self.assertEqual(reasoning, "recovered")
+        self.assertEqual(action, "VOTE: Bob")
+        self.assertIsNotNone(new_session)
+        self.assertNotEqual(new_session.session_id, session.session_id)
+        self.assertEqual(agent.calls, 2)
+
+    async def test_repeated_session_expiry_falls_back_to_non_stream(self):
+        from agent_framework import AgentSession
+        import agents.base as base_module
+
+        class FakeStreamChunk:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeNonStreamResult:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+                self.non_stream_calls = 0
+                self.name = "Alice"
+
+            def run(self, prompt, stream=False, session=None):
+                if stream:
+                    self.stream_calls += 1
+
+                    async def iterator():
+                        raise Exception("previous_response_id not found")
+                        yield FakeStreamChunk("unused")
+
+                    return iterator()
+
+                self.non_stream_calls += 1
+                async def result():
+                    return FakeNonStreamResult("REASONING: fallback ACTION: VOTE: Bob")
+
+                return result()
+
+        session = AgentSession()
+        session.state["history"] = {"messages": []}
+        agent = FakeAgent()
+
+        with patch.object(base_module, "MAFIA_ENABLE_STREAMING_FALLBACK", True):
+            reasoning, action, new_session = await base_module.run_agent_stream(
+                agent,
+                "prompt",
+                session=session,
+                player_name="Alice",
+            )
+
+        self.assertEqual(reasoning, "fallback")
+        self.assertEqual(action, "VOTE: Bob")
+        self.assertIsNotNone(new_session)
+        self.assertGreaterEqual(agent.stream_calls, 3)
+        self.assertEqual(agent.non_stream_calls, 1)
+
+    async def test_empty_streaming_action_falls_back_to_non_stream(self):
+        from agent_framework import AgentSession
+        import agents.base as base_module
+
+        class FakeChunk:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeNonStreamResult:
+            def __init__(self, text: str):
+                self.text = text
+
+        class FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+                self.non_stream_calls = 0
+                self.name = "Bob"
+
+            def run(self, prompt, stream=False, session=None):
+                if stream:
+                    self.stream_calls += 1
+
+                    async def iterator():
+                        yield FakeChunk("REASONING: still thinking ACTION:")
+
+                    return iterator()
+
+                self.non_stream_calls += 1
+                async def result():
+                    return FakeNonStreamResult("REASONING: recovered ACTION: VOTE: Alice")
+
+                return result()
+
+        session = AgentSession()
+        session.state["history"] = {"messages": []}
+        agent = FakeAgent()
+
+        with patch.object(base_module, "MAFIA_ENABLE_STREAMING_FALLBACK", True):
+            reasoning, action, _ = await base_module.run_agent_stream(
+                agent,
+                "prompt",
+                session=session,
+                player_name="Bob",
+            )
+
+        self.assertEqual(reasoning, "recovered")
+        self.assertEqual(action, "VOTE: Alice")
+        self.assertEqual(agent.stream_calls, 3)
+        self.assertEqual(agent.non_stream_calls, 1)
+
+
 # ===========================================================================
 #  8. Recency Weighting in SummaryAgent
 # ===========================================================================
@@ -523,6 +879,112 @@ class TestMafiaPromptQuestions(unittest.TestCase):
         from prompts.builder import build_mafia_prompt
         prompt = build_mafia_prompt("Eve", "Frank", "Analytical", "TheMartyr")
         self.assertIn("Frank has been eliminated", prompt)
+
+
+# ===========================================================================
+#  10. Framework Registry / Preset Integration
+# ===========================================================================
+
+class TestFrameworkIntegration(unittest.TestCase):
+    """Verify optional framework modules can be composed safely."""
+
+    def test_resolve_framework_names_expands_preset_and_dedupes(self):
+        from prompts.frameworks import resolve_framework_names
+
+        names = resolve_framework_names(
+            ("game-theory",),
+            presets=("strategic-synthesis",),
+            extras=("game-theory", "humanizer"),
+        )
+
+        self.assertEqual(names.count("game-theory"), 1)
+        self.assertIn("systems-theory", names)
+        self.assertIn("dialectical-materialism", names)
+        self.assertIn("humanizer", names)
+
+    def test_mafia_prompt_accepts_framework_preset(self):
+        from prompts.builder import build_mafia_prompt
+
+        prompt = build_mafia_prompt(
+            "Alice",
+            "Bob",
+            "Paranoid",
+            "TheAnalyst",
+            framework_presets=("strategic-synthesis",),
+        )
+
+        self.assertIn("SYNTHESIS PIPELINE", prompt)
+        self.assertIn("CONTRADICTION ANALYSIS", prompt)
+        self.assertIn("SYSTEMS THINKING", prompt)
+
+    def test_villager_prompt_accepts_speech_extras(self):
+        from prompts.builder import build_villager_prompt
+
+        prompt = build_villager_prompt(
+            "Alice",
+            "Analytical",
+            "TheAnalyst",
+            extra_frameworks=("universal-storytelling", "humanizer"),
+        )
+
+        self.assertIn("PERSUASIVE DELIVERY", prompt)
+        self.assertIn("HUMAN WRITING", prompt)
+
+    def test_narrator_prompt_includes_humanizer_by_default(self):
+        from prompts.builder import build_narrator_prompt
+
+        prompt = build_narrator_prompt()
+        self.assertIn("HUMAN WRITING", prompt)
+
+    def test_archetype_can_add_framework_automatically(self):
+        from prompts.builder import build_villager_prompt
+
+        prompt = build_villager_prompt("Alice", "Contrarian", "TheGhost")
+        self.assertIn("CONTRADICTION ANALYSIS", prompt)
+
+    def test_personality_can_add_framework_automatically(self):
+        from prompts.builder import build_villager_prompt
+
+        prompt = build_villager_prompt("Alice", "Passive", "MythBuilder")
+        self.assertIn("PERSUASIVE DELIVERY", prompt)
+
+    def test_trait_frameworks_are_deduped_against_role_defaults(self):
+        from prompts.builder import build_mafia_prompt
+
+        prompt = build_mafia_prompt("Alice", "Bob", "Manipulative", "TheParasite")
+        self.assertEqual(prompt.count("POLITICAL OPERATION:"), 1)
+
+    def test_role_specific_archetype_framework_can_apply(self):
+        from prompts.builder import build_doctor_prompt
+
+        prompt = build_doctor_prompt("Grace", "Passive", "TheGhost")
+        self.assertIn("SOCIAL EXECUTION", prompt)
+
+    def test_role_specific_personality_framework_can_apply(self):
+        from prompts.builder import build_villager_prompt
+
+        prompt = build_villager_prompt("Alice", "Passive", "TheParasite")
+        self.assertIn("SOCIAL EXECUTION", prompt)
+
+    def test_all_player_prompts_include_humanizer_stack(self):
+        from prompts.builder import (
+            build_mafia_prompt,
+            build_detective_prompt,
+            build_doctor_prompt,
+            build_villager_prompt,
+        )
+
+        prompts = [
+            build_mafia_prompt("Alice", "Bob", "Paranoid", "TheAnalyst"),
+            build_detective_prompt("Charlie", "Passive", "VibesVoter"),
+            build_doctor_prompt("Eve", "Diplomatic", "TheMartyr"),
+            build_villager_prompt("Grace", "Contrarian", "MythBuilder"),
+        ]
+
+        for prompt in prompts:
+            self.assertIn("HUMAN WRITING", prompt)
+            self.assertIn("SIGNS OF AI WRITING", prompt)
+            self.assertIn("FAILURE ARCHETYPE CHECK", prompt)
 
 
 # ===========================================================================
@@ -1310,6 +1772,25 @@ class TestRateLimitErrorDetection(unittest.TestCase):
         self.assertFalse(_is_rate_limit_error(Exception("connection reset")))
 
 
+class TestServerErrorDetection(unittest.TestCase):
+    """Verify 5xx detection does not misclassify 400 session errors."""
+
+    def test_detects_real_500_status(self):
+        from agents.rate_limiter import _is_server_error
+
+        self.assertTrue(_is_server_error(Exception("Error code: 500 - backend failed")))
+
+    def test_ignores_400_previous_response_not_found_with_500_in_response_id(self):
+        from agents.rate_limiter import _is_server_error
+
+        exc = Exception(
+            "Error code: 400 - {'error': {'message': \"Previous response with id "
+            "'resp_027a9b4bdfafab950069dbc7b323c081939a8f8573a5dcbe29' not found.\", "
+            "'code': 'previous_response_not_found'}}"
+        )
+        self.assertFalse(_is_server_error(exc))
+
+
 class TestMiddlewareRegistration(unittest.TestCase):
     """Verify new middleware is registered on all agent types."""
 
@@ -1345,6 +1826,58 @@ class TestMiddlewareRegistration(unittest.TestCase):
         from agent_framework import AgentMiddleware
 
         self.assertTrue(issubclass(RateLimitMiddleware, AgentMiddleware))
+
+
+class TestNarratorConfiguration(unittest.TestCase):
+    """Verify the narrator now uses the same session recovery primitives."""
+
+    def test_narrator_uses_history_and_resilience_middleware(self):
+        import agents.narrator as narrator_module
+        from agent_framework import InMemoryHistoryProvider
+        from agents.middleware import ResilientSessionMiddleware, RateLimitMiddleware
+
+        captured: dict[str, object] = {}
+
+        class DummyAgent:
+            def __init__(self, *args, **kwargs):
+                captured.update(kwargs)
+
+            def create_session(self):
+                return object()
+
+        with patch.object(narrator_module, "Agent", DummyAgent):
+            narrator_module.NarratorAgent(client=None)
+
+        providers = captured.get("context_providers", [])
+        middleware = captured.get("middleware", [])
+
+        self.assertTrue(any(isinstance(p, InMemoryHistoryProvider) for p in providers))
+        self.assertTrue(any(isinstance(m, ResilientSessionMiddleware) for m in middleware))
+        self.assertTrue(any(isinstance(m, RateLimitMiddleware) for m in middleware))
+
+
+class TestConsoleEncodingSetup(unittest.TestCase):
+    """Verify the CLI enables UTF-8 output when streams support it."""
+
+    def test_configure_console_encoding_reconfigures_stdout_and_stderr(self):
+        import main as main_module
+
+        calls: list[tuple[str, str]] = []
+
+        class FakeStream:
+            def __init__(self, label: str):
+                self.label = label
+
+            def reconfigure(self, **kwargs):
+                calls.append((self.label, kwargs.get("encoding")))
+
+        with patch.object(main_module.sys, "stdout", FakeStream("stdout")), patch.object(
+            main_module.sys, "stderr", FakeStream("stderr")
+        ):
+            main_module._configure_console_encoding()
+
+        self.assertIn(("stdout", "utf-8"), calls)
+        self.assertIn(("stderr", "utf-8"), calls)
 
 
 class TestConversationContinuity(unittest.TestCase):
@@ -1565,6 +2098,44 @@ class TestSessionRefreshRegistry(unittest.TestCase):
 
         # Registry should be clean after the pop.
         self.assertNotIn(old_id, _session_refresh_registry)
+
+
+# ===========================================================================
+#  31. Vote Prompt Enforces Exact Action Shape
+# ===========================================================================
+
+class TestVotePromptFormatting(unittest.TestCase):
+    """Verify runtime vote prompts strongly constrain the final action format."""
+
+    def test_vote_prompt_prefers_tool_or_exact_action_line(self):
+        from agents.base import format_vote_prompt
+
+        prompt = format_vote_prompt(
+            "PUBLIC STATE",
+            ["Bob: I think Eve is slippery."],
+            "Alice",
+            ["Bob", "Eve", "Frank"],
+        )
+
+        self.assertIn("Preferred: call the cast_vote tool", prompt)
+        self.assertIn("ACTION: VOTE: <exact name from valid targets>", prompt)
+        self.assertIn("The ACTION line must contain exactly one player name", prompt)
+        self.assertIn("Bad: ACTION: I vote Bob because...", prompt)
+        self.assertIn("Good: ACTION: VOTE: Bob", prompt)
+
+    def test_vote_prompt_retains_private_context(self):
+        from agents.base import format_vote_prompt
+
+        prompt = format_vote_prompt(
+            "PUBLIC STATE",
+            ["Bob: I think Eve is slippery."],
+            "Alice",
+            ["Bob", "Eve", "Frank"],
+            private_context="Your findings:\n  Eve: Innocent",
+        )
+
+        self.assertIn("Your findings:", prompt)
+        self.assertIn("Eve: Innocent", prompt)
 
 
 # ===========================================================================

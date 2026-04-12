@@ -1,0 +1,989 @@
+
+[1m[96m
+╔══════════════════════════════════════════════╗
+║            MAFIA: THE AI GAME  v3           ║
+║  Microsoft Agent Framework + Azure Foundry  ║
+╚══════════════════════════════════════════════╝
+[0m
+[1mPlayers:[0m
+  - Alice
+  - Bob
+  - Charlie
+  - Diana
+  - Eve
+  - Frank
+  - Grace
+  - Hank
+  - Ivy
+  - Jack
+  - Kate
+
+[1mAssignments (roles hidden):[0m
+  Player     Model                Archetype      Personality
+  ------     -----                ---------      -----------
+  Alice      GPT-5.4-MINI         Paranoid       VibesVoter
+  Bob        GPT-5.4-MINI         Methodical     MythBuilder
+  Charlie    GPT-5.4-MINI         Passive        VibesVoter
+  Diana      GPT-5.4-MINI         Impulsive      TheMartyr
+  Eve        GPT-5.4-MINI         Passive        TheMartyr
+  Frank      GPT-5.4-MINI         Charming       TheGhost
+  Grace      GPT-5.4-MINI         Stubborn       ThePerformer
+  Hank       GPT-5.4-MINI         Overconfident  TheConfessor
+  Ivy        GPT-5.4-MINI         Impulsive      TheGhost
+  Jack       GPT-5.4-MINI         Reactive       TheAnalyst
+  Kate       GPT-5.4-MINI         Overconfident  TheAnalyst
+
+
+[1m[96m=========================
+=  ROUND 0: GAME START  =
+=========================[0m
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Day breaks over the town. The first discussion begins,
+│    and every voice is on the table.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=============================
+=  ROUND 1: DAY DISCUSSION  =
+=============================[0m
+
+📋 CURRENT NARRATIVE — Round 1
+   Phase: DAY DISCUSSION
+
+• Players alive: Alice, Bob, Charlie, Diana, Eve, Frank, Grace, Hank, Ivy, Jack, Kate (11 remaining)
+• Current target: No clear consensus yet
+• What happens next: Listen and discuss. Share your reads. Build a case or defend yourself.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Round 1 begins. Morning light reaches the town square,
+│    and the first talk starts.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   Jack, you’re first up, so give me your real read on wh
+│   o looks the most booky here and why. If you start with
+│    a safe vague answer, I’ll treat that as a red flag.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Bob, you just told me to give a “real read,” and that’
+│   s fair, but you also framed it like a test before anyo
+│   ne has said a word. That feels a bit gassed. I think t
+│   hat kind of early pressure can be used to steer the ro
+│   om before real reads exist. What’s your own take, bruv
+│   , or are you just setting traps and waiting for someon
+│   e to trip?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   Jack, you’re right to call that out. Bob, you told him
+│    to give a “real read” while the room was still dead q
+│   uiet, so I want your own take on one player, proper an
+│   d named, not just the pressure game. Who looks booky t
+│   o you, and why?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   Bob, you said "give me your real read" and that’s fair
+│    enough, but you’re still the one controlling the pace
+│   . Pick one player and tell me why they look booky, bru
+│   v.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   Hank, you just said "you’re still the one controlling 
+│   the pace" — fair, but that line is too easy in a dead 
+│   room. Bob is loud, yeah. That is not the same as dirty
+│   . Give me one name and one reason, or you’re just nudg
+│   ing the lane.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Ivy | Villager | Impulsive | TheGhost] ───────────────┐
+│ [1mACTION:[0m[94m
+│   Frank, you said "That line is too easy in a dead room.
+│   " True. But you still didn’t give a name. Bob is the l
+│   oud one. That alone is not enough. If you’ve got a rea
+│   l read, say it. If you don’t, you’re just keeping the 
+│   heat moving.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   Ivy, you said "you still didn’t give a name" and "Bob 
+│   is the loud one. That alone is not enough." Fair. But 
+│   you’re doing the exact same dodge you’re calling out. 
+│   Give me one player you actually trust least, or I’ll t
+│   reat you as the one keeping this on rails, innit.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Grace, you said “you’re doing the exact same dodge you
+│   ’re calling out.” That is fair as a shape, but I do no
+│   t buy the same weight. You have kept the room on the s
+│   ame track while asking for names, and that feels booky
+│    to me. Ivy, you keep pressing for a name, so give me 
+│   yours first. Who do you trust least, proper and named?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Alice | Villager | Paranoid | VibesVoter] ────────────┐
+│ [1mACTION:[0m[94m
+│   Diana, you said “you have kept the room on the same tr
+│   ack while asking for names” and that’s exactly the bit
+│    I’m looking at. I don’t buy you pushing Grace like th
+│   at while still dodging your own name. Ivy, don’t let D
+│   iana park this on you. Diana, give me one player you t
+│   rust least, proper and named, or it feels like you’re 
+│   steering, innit.
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Alice, you said “you have kept the room on the same tr
+│   ack while asking for names” and I think that is a fair
+│    shape, but you are folding pressure into guilt too fa
+│   st. Diana, you were asked for a name, so give one now.
+│    If you think the pace-setting is the real issue, say 
+│   who benefits from that. Bob’s the loud one, but loud i
+│   s not the same as dirty, innit.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Eve, you said “folding pressure into guilt too fast,” 
+│   and that feels like you’re smoothing it over. Who do y
+│   ou trust least right now, proper and named? I don’t bu
+│   y the endless Bob orbit, bruv, give me something real 
+│   or you’re just keeping the lane moving.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   Charlie, you just said “give me something real” but yo
+│   u still didn’t drop your own name. That’s booky. I’m n
+│   ot letting you park this on Eve while you stay clean, 
+│   bruv. Name one player you trust least, proper and name
+│   d, and tell me why that person is worse than Bob.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   Hank, you said “I’m not letting you park this on Eve w
+│   hile you stay clean” and that is fair as a shape, but 
+│   you are also keeping the whole table on the same rail 
+│   instead of putting your own read down first. Name the 
+│   one player you trust least, proper and named, and tell
+│    me why they are worse than Bob.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Alice | Villager | Paranoid | VibesVoter] ────────────┐
+│ [1mACTION:[0m[94m
+│   Kate, you said "you are also keeping the whole table o
+│   n the same rail instead of putting your own read down 
+│   first" and that is exactly the bit I don't like. It fe
+│   els booky. Give me your own least-trusted name, no dan
+│   cing.
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Alice, you said “you are also keeping the whole table 
+│   on the same rail instead of putting your own read down
+│    first” and that is fair. I do think you are rushing t
+│   he room a bit, though. My least-trusted name right now
+│    is Bob, because he keeps setting the pace without giv
+│   ing the table much to work with. Alice, give me your o
+│   wn name too, proper and named.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Eve, you said “My least-trusted name right now is Bob,
+│   ” and that is the easy call in this room. I want the a
+│   wkward name, the one you do not want to say. If Bob is
+│    your real read, why did it take the whole table dragg
+│   ing him there?
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   Charlie, you’re calling Eve’s Bob read the easy call, 
+│   but you still haven’t put down your own awkward name, 
+│   and that is the part I’m watching. If you think Bob is
+│    only the easy answer, then say who you trust least an
+│   d why, proper and named, instead of making Eve do all 
+│   the heavy lifting.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Bob, you keep asking for an awkward name, but you are 
+│   still dodging the same thing yourself. Alice said “I d
+│   on’t buy you pushing Grace like that while still dodgi
+│   ng your own name,” and that is the cleanest pressure i
+│   n the room. I trust Alice least right now, because she
+│    is the one making the lane tight. Charlie, you answer
+│    that, or you are just letting Bob set the tempo.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Diana, I agree with the pressure on Alice, because she
+│   ’s been one of the main people tightening the room whi
+│   le refusing to sit in the same spot herself. Alice, yo
+│   u keep asking for names while never giving one cleanly
+│    back, and that is booky as hell. If you think I’m wro
+│   ng, give me the one player you trust least, proper and
+│    named, and stop dancing round it.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   Jack, you are leaning on Diana’s rail too fast. "I agr
+│   ee with the pressure on Alice" feels like you are borr
+│   owing the room’s mood, not showing me your own read. A
+│   lice, you keep getting named, so give me one player yo
+│   u trust least and the reason, proper and named, or thi
+│   s starts looking like you are just absorbing heat.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Ivy | Villager | Impulsive | TheGhost] ───────────────┐
+│ [1mACTION:[0m[94m
+│   Grace, that was a good catch. Jack, give me your own l
+│   east-trusted name, proper and named, or you look like 
+│   you are riding Diana's wave. Alice, same for you. Who 
+│   is your worst read, and why?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   Ivy, you’re right on Jack. He’s riding Diana’s wave. J
+│   ack, give me one name you trust least, proper and name
+│   d. No ducking. Alice, same question.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=======================
+=  ROUND 1: DAY VOTE  =
+=======================[0m
+
+📋 CURRENT NARRATIVE — Round 1
+   Phase: DAY VOTE
+
+• Players alive: Alice, Bob, Charlie, Diana, Eve, Frank, Grace, Hank, Ivy, Jack, Kate (11 remaining)
+• Current target: No clear consensus yet
+• Key evidence: Eve said: "Alice, you said “you have kept the room on the same track while asking for names” and I think that is a fair shape, but..."
+• What happens next: VOTE. Pick a player to eliminate. Majority rules.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Voting time begins. The room tightens, and every name 
+│   is open.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Alice | Villager | Paranoid | VibesVoter] ────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Ivy | Villager | Impulsive | TheGhost] ───────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Alice
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m---- Vote Tally ----[0m
+  Alice      -> Diana
+  Bob        -> Alice
+  Charlie    -> Bob
+  Diana      -> Alice
+  Eve        -> Alice
+  Frank      -> Jack
+  Grace      -> Alice
+  Hank       -> Alice
+  Ivy        -> Alice
+  Jack       -> Alice
+  Kate       -> Alice
+
+[1m---- Counts ----[0m
+  Alice      ████████ (8)
+  Diana      █ (1)
+  Bob        █ (1)
+  Jack       █ (1)
+
+[91m[1m>>> ELIMINATED: Alice <<<[0m
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Alice is out. The vote lands hard, and the town loses 
+│   a Villager.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m====================
+=  ROUND 1: NIGHT  =
+====================[0m
+
+📋 CURRENT NARRATIVE — Round 1
+   Phase: NIGHT
+
+• Players alive: Bob, Charlie, Diana, Eve, Frank, Grace, Hank, Ivy, Jack, Kate (10 remaining)
+• Recent elimination: Alice (Villager)
+• Current target: Bob (weighted suspicion score: 1.0)
+• Key evidence: Eve said: "Alice, you said “you have kept the room on the same track while asking for names” and I think that is a fair shape, but..."
+• Votes so far: Alice(8), Diana(1), Bob(1), Jack(1)
+• What happens next: Night phase. Special roles act. Town sleeps.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Night falls. The town sleeps. Shadows move while the s
+│   treets go quiet.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   [NIGHT TARGET]: TARGET: Ivy
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   [NIGHT TARGET]: TARGET: Ivy
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   [INVESTIGATED]: Bob -> Mafia
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   [PROTECTING]: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m---- Dawn breaks... ----[0m
+[91m[1mELIMINATED: Ivy (Villager)[0m
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Dawn breaks, and Ivy is found dead. The town wakes to 
+│   another lost Villager.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=============================
+=  ROUND 2: DAY DISCUSSION  =
+=============================[0m
+
+📋 CURRENT NARRATIVE — Round 2
+   Phase: DAY DISCUSSION
+
+• Players alive: Bob, Charlie, Diana, Eve, Frank, Grace, Hank, Jack, Kate (9 remaining)
+• Recent elimination: Ivy (Villager)
+• Current target: Bob (weighted suspicion score: 0.3)
+• Key evidence: Eve said: "Alice, you said “you have kept the room on the same track while asking for names” and I think that is a fair shape, but..."
+• What happens next: Listen and discuss. Share your reads. Build a case or defend yourself.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Dawn breaks. Ivy is dead. The town gathers again, and 
+│   the talk starts.
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Bob, you opened with the pace last round, and Alice fl
+│   ipping green makes that look worse, not better. Why di
+│   d you start the table with a test before anyone had re
+│   al reads?
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   Eve, you’re right that Alice flipping green makes my f
+│   irst move look ugly, and I’m not going to pretend othe
+│   rwise. What I’m saying is that one bad opener is easie
+│   r to explain than the people who were happy to keep th
+│   e room circling it while nobody committed to a name. Y
+│   ou pushed me fast, so give me the player you trust lea
+│   st now, proper and named, and tell me why that read is
+│    stronger than the clean version you’re selling.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   Bob, you said "people who were happy to keep the room 
+│   circling it" — that is bait. Name one player, or I air
+│    the whole line. Eve, you pushed him clean. Who beside
+│    Bob is actually sitting worst for you now?
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Frank, you said “Name one player, or I air the whole l
+│   ine.” That is a fair demand, but you are still trying 
+│   to force the room into one clean lane too early. Eve, 
+│   you are right that Bob’s opener looks ugly now, but I 
+│   want the bit after that. Who actually kept the circle 
+│   going once the test was on the table? Give me one name
+│   , proper and named.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   Diana, you said “you are still trying to force the roo
+│   m into one clean lane too early,” and that is a bit bo
+│   oky when Alice has already flipped green. You are aski
+│   ng for one name, but you are dodging Frank’s point abo
+│   ut who kept the circle going. Frank, give the name pro
+│   per, because if you cannot, then you are just yapping 
+│   around Bob’s ugly opener.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Kate, you’re right to call the dodge out, but I’m not 
+│   letting Bob wriggle. He’s the one setting the pace and
+│    pulling everyone off the clean read. Frank, you eithe
+│   r help push Bob or you’re letting him breathe, innit.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   Charlie, you said "He’s the one setting the pace and p
+│   ulling everyone off the clean read." That is neat, but
+│    I need the bit you are skipping. Who else kept the ci
+│   rcle going, proper and named? If you can’t give me one
+│   , you’re helping Bob more than you think, bruv.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Grace, you just said “who else kept the circle going, 
+│   proper and named?” and that’s fair, but you’re letting
+│    Bob sit behind the noise while you squeeze Charlie fo
+│   r a clean answer. Bob started with the test, then move
+│   d into name-demanding once the room was already spinni
+│   ng, and that feels booky. Frank, you were quick to for
+│   ce a name too, so why are you treating Bob like he’s j
+│   ust a passive bystander here?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   Jack, you said "Bob started with the test, then moved 
+│   into name-demanding" and that is exactly why I’m not l
+│   etting him off easy, bruv. Grace, you’re still squeezi
+│   ng Charlie for a neat answer while Bob keeps steering 
+│   the lane. Jack, if you think Bob is passive, say who i
+│   s actually driving this mess then. Give me one name pr
+│   oper, because this back-and-forth is getting long and 
+│   a bit bait.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Hank, you just put Jack on the spot in a way that feel
+│   s clean, but you are still leaving the real driver hal
+│   f-hidden. Jack keeps demanding who is steering, yet he
+│    stays right in the middle of every turn. That is the 
+│   bit I do not like. If you think he is just reacting, e
+│   xplain why he keeps ending up at the centre of the lan
+│   e.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   Diana, you said “he keeps ending up at the centre of t
+│   he lane,” and that is the part I’m staring at too, bec
+│   ause Jack’s pattern here is more than reaction. Jack, 
+│   you came in on Grace, then turned the heat back on Bob
+│   , and now you’re sitting in the middle while the room 
+│   moves around you. That feels booky, not clean. Explain
+│    why you keep landing there.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Bob, you are doing exactly what I warned about in roun
+│   d one, you are turning “centre of the lane” into a sto
+│   ry and acting like it proves guilt. Alice flipping vil
+│   lager is the only hard fact we got, and it does change
+│    the room. You keep saying I “came in on Grace” and “t
+│   urned the heat back on Bob,” but that is just a clean 
+│   tale, not a clean read. Why are you so keen to make my
+│    reactions look like a plan, fam?
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Jack, you said “you are turning ‘centre of the lane’ i
+│   nto a story” and that is exactly why I am not letting 
+│   you drag this off Bob. I investigated Bob. He is Mafia
+│   . Your clean-tale line is doing the job for him, bruv.
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Charlie, you said “I investigated Bob. He is Mafia.” T
+│   hat is a big claim, and I am not letting it pass witho
+│   ut pressure. Why wait until now to say it, and what di
+│   d you see that makes Bob the one? Bob, you have to ans
+│   wer this cleanly, because that is deep.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=======================
+=  ROUND 2: DAY VOTE  =
+=======================[0m
+
+📋 CURRENT NARRATIVE — Round 2
+   Phase: DAY VOTE
+
+• Players alive: Bob, Charlie, Diana, Eve, Frank, Grace, Hank, Jack, Kate (9 remaining)
+• Recent elimination: Ivy (Villager)
+• Current target: Jack (weighted suspicion score: 5.3)
+• Key evidence: Jack said: "Bob, you are doing exactly what I warned about in round one, you are turning “centre of the lane” into a story and actin..."
+• What happens next: VOTE. Pick a player to eliminate. Majority rules.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   The day vote begins. Speak now and choose who goes.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Bob | Mafia | Methodical | MythBuilder] ──────────────┐
+│ [1mACTION:[0m[91m
+│   VOTE: Charlie
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Frank | Villager | Charming | TheGhost] ──────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Charlie
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Jack
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Bob
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m---- Vote Tally ----[0m
+  Bob        -> Charlie
+  Charlie    -> Bob
+  Diana      -> Bob
+  Eve        -> Bob
+  Frank      -> Charlie
+  Grace      -> Jack
+  Hank       -> Bob
+  Jack       -> Bob
+  Kate       -> Bob
+
+[1m---- Counts ----[0m
+  Bob        ██████ (6)
+  Charlie    ██ (2)
+  Jack       █ (1)
+
+[91m[1m>>> ELIMINATED: Bob <<<[0m
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Bob is out. The vote hits, and the town takes down Maf
+│   ia.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m====================
+=  ROUND 2: NIGHT  =
+====================[0m
+
+📋 CURRENT NARRATIVE — Round 2
+   Phase: NIGHT
+
+• Players alive: Charlie, Diana, Eve, Frank, Grace, Hank, Jack, Kate (8 remaining)
+• Recent elimination: Ivy (Villager)
+• Current target: Jack (weighted suspicion score: 6.3)
+• Key evidence: Jack said: "Bob, you are doing exactly what I warned about in round one, you are turning “centre of the lane” into a story and actin..."
+• Votes so far: Bob(6), Charlie(2), Jack(1)
+• What happens next: Night phase. Special roles act. Town sleeps.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Night falls. The town sleeps. The dark settles in.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   [NIGHT TARGET]: Frank
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   [INVESTIGATED]: Jack -> Innocent
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   [PROTECTING]: Charlie
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m---- Dawn breaks... ----[0m
+[91m[1mELIMINATED: Frank (Villager)[0m
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Dawn breaks, and Frank is found dead. The town wakes t
+│   o another lost Villager.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=============================
+=  ROUND 3: DAY DISCUSSION  =
+=============================[0m
+
+📋 CURRENT NARRATIVE — Round 3
+   Phase: DAY DISCUSSION
+
+• Players alive: Charlie, Diana, Eve, Grace, Hank, Jack, Kate (7 remaining)
+• Recent elimination: Ivy (Villager)
+• Current target: Jack (weighted suspicion score: 1.9)
+• Key evidence: Jack said: "Bob, you are doing exactly what I warned about in round one, you are turning “centre of the lane” into a story and actin..."
+• What happens next: Listen and discuss. Share your reads. Build a case or defend yourself.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Dawn breaks. Frank is dead. The town gathers again, an
+│   d the talk starts.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   Jack, you were loud on Bob after Alice flipped green. 
+│   Tell me why that was more than easy town theatre. Who 
+│   did you think was the next real problem, proper and na
+│   med?
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Grace, you said “tell me why that was more than easy t
+│   own theatre.” That is fair, but I was on Bob because h
+│   is opener was the cleanest bad thing in the room, and 
+│   Bob flipping Mafia makes that call look correct, not s
+│   taged. The next real problem is Charlie. You said “I i
+│   nvestigated Bob. He is Mafia.” That is the bit I want 
+│   pinned down.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   Diana, you said "The next real problem is Charlie." Th
+│   at is a clean jump after Bob flipping red, and it feel
+│   s a bit too tidy. I want you to say what Charlie did b
+│   efore you got him in your mouth like that, proper and 
+│   named.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   Hank, that is the right push. Diana, you said “The nex
+│   t real problem is Charlie,” so tell us what Charlie di
+│   d in this round that puts him there, because a clean j
+│   ump after Bob flipping red feels too convenient.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Diana, you said “The next real problem is Charlie,” an
+│   d that is the bit I am pushing back on. Bob flipping M
+│   afia does not hand you a free pass to slide onto me wi
+│   thout saying what I actually did. What did I do this r
+│   ound that makes me your next pick, proper and named?
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Diana, you said Charlie is “the next real problem,” an
+│   d Charlie is right to ask what he actually did this ro
+│   und. Bob flipping Mafia does not give you a free slide
+│   . Give me the specific line or move from Charlie that 
+│   makes him your next pick, because right now that jump 
+│   feels a bit too neat.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Eve, you’re right to pull Diana up here. Bob flipping 
+│   Mafia is a real hit, and I do not want the room doing 
+│   that classic thing where the first red flip lets someb
+│   ody slide the next name in with no work. Diana, if Cha
+│   rlie is the next real problem, say the exact line he s
+│   aid or the move he made, because “the next real proble
+│   m is Charlie” on its own is bare weak.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   Jack, you said "the first red flip lets somebody slide
+│    the next name in with no work" and that is the right 
+│   warning. Diana, you need to answer that cleanly now, b
+│   ecause “the next real problem is Charlie” is weak with
+│   out the actual move.
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   Hank, you said "the first red flip lets somebody slide
+│    the next name in with no work" and I agree with the w
+│   arning. The thing Charlie did is keep pushing me as if
+│    Bob’s flip settles the room for him. That is tidy, an
+│   d I do not buy it. Charlie, you keep asking for a sing
+│   le line, but your own line is this whole jump to me. W
+│   hy are you so keen to make my name stick before the ro
+│   om has moved?
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   Diana, that answer is still too soft for where we are.
+│    “Charlie keeps pushing me” is a reaction, not a bad m
+│   ove, and you are trying to turn pressure into guilt ag
+│   ain. Bob flipping Mafia does not make Charlie clean, b
+│   ut it does mean I need the actual quote or action, not
+│    this vague “keeps pushing” bit. If you have the real 
+│   thing, say it plain.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   Jack, I’m with you on this. Diana, you said “Charlie k
+│   eeps pushing me,” and that is still just heat, not a b
+│   ad act. If you want Charlie in the frame, give me the 
+│   exact line or the exact move, because right now you ar
+│   e trying to make pressure do the work of a read.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   Diana, you said “Charlie keeps pushing me” and that is
+│    still not the thing. Give me the exact line or the ex
+│   act move from me that makes you point at me now. If yo
+│   u cannot do that, then you are leaning on the Bob flip
+│    to make your case look stronger than it is.
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   Charlie, you said “If you cannot do that, then you are
+│    leaning on the Bob flip to make your case look strong
+│   er than it is.” That is fair, but you are also dodging
+│    the real ask. Diana, you keep saying Charlie is “the 
+│   next real problem,” so name the exact move. One clean 
+│   line, not vibes. If you cannot, then your push is book
+│   y.
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   Grace, you said “One clean line, not vibes.” That is t
+│   he right ask, but I want more than a quote hunt. Diana
+│   , what is the actual move you are tying to Charlie, be
+│   cause if you cannot name it, your push looks like a fr
+│   ame.
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[96m=======================
+=  ROUND 3: DAY VOTE  =
+=======================[0m
+
+📋 CURRENT NARRATIVE — Round 3
+   Phase: DAY VOTE
+
+• Players alive: Charlie, Diana, Eve, Grace, Hank, Jack, Kate (7 remaining)
+• Recent elimination: Ivy (Villager)
+• Current target: Charlie (weighted suspicion score: 4.9)
+• Key evidence: Grace said: "Jack, you were loud on Bob after Alice flipped green. Tell me why that was more than easy town theatre. Who did you thin..."
+• What happens next: VOTE. Pick a player to eliminate. Majority rules.
+
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Voting time. The town chooses who goes.
+└──────────────────────────────────────────────────────────┘[0m
+
+[93m┌─ [Charlie | Detective | Passive | VibesVoter] ──────────┐
+│ [1mACTION:[0m[93m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[91m┌─ [Diana | Mafia | Impulsive | TheMartyr] ───────────────┐
+│ [1mACTION:[0m[91m
+│   VOTE: Charlie
+└──────────────────────────────────────────────────────────┘[0m
+
+[92m┌─ [Eve | Doctor | Passive | TheMartyr] ──────────────────┐
+│ [1mACTION:[0m[92m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Grace | Villager | Stubborn | ThePerformer] ──────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Hank | Villager | Overconfident | TheConfessor] ──────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Jack | Villager | Reactive | TheAnalyst] ─────────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[94m┌─ [Kate | Villager | Overconfident | TheAnalyst] ────────┐
+│ [1mACTION:[0m[94m
+│   VOTE: Diana
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m---- Vote Tally ----[0m
+  Charlie    -> Diana
+  Diana      -> Charlie
+  Eve        -> Diana
+  Grace      -> Diana
+  Hank       -> Diana
+  Jack       -> Diana
+  Kate       -> Diana
+
+[1m---- Counts ----[0m
+  Diana      ██████ (6)
+  Charlie    █ (1)
+
+[91m[1m>>> ELIMINATED: Diana <<<[0m
+
+[97m[1m┌─ [Narrator | Narrator | Impartial] ─────────────────────┐
+│ [1mACTION:[0m[97m[1m
+│   Diana is out. The vote lands, and Mafia falls with her
+│   .
+└──────────────────────────────────────────────────────────┘[0m
+
+[1m[92m
+╔══════════════════════════════════════════════╗
+║            GAME OVER - TOWN WINS!            ║
+╚══════════════════════════════════════════════╝[0m
+
+[1mFinal roles, archetypes, and personalities:[0m
+  [92mAlice      Villager   [Paranoid    ] [VibesVoter] ELIMINATED[0m
+  [91mBob        Mafia      [Methodical  ] [MythBuilder] ELIMINATED[0m
+  [92mCharlie    Detective  [Passive     ] [VibesVoter] SURVIVED[0m
+  [91mDiana      Mafia      [Impulsive   ] [TheMartyr] ELIMINATED[0m
+  [92mEve        Doctor     [Passive     ] [TheMartyr] SURVIVED[0m
+  [92mFrank      Villager   [Charming    ] [TheGhost] ELIMINATED[0m
+  [92mGrace      Villager   [Stubborn    ] [ThePerformer] SURVIVED[0m
+  [92mHank       Villager   [Overconfident] [TheConfessor] SURVIVED[0m
+  [92mIvy        Villager   [Impulsive   ] [TheGhost] ELIMINATED[0m
+  [92mJack       Villager   [Reactive    ] [TheAnalyst] SURVIVED[0m
+  [92mKate       Villager   [Overconfident] [TheAnalyst] SURVIVED[0m
+
+[1mGame lasted 3 round(s).[0m
+

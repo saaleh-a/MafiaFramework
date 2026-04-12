@@ -450,6 +450,8 @@ class MafiaGameOrchestrator:
             self._print(name, agent.role, agent.archetype, reasoning, action,
                         personality=getattr(agent, 'personality', ''))
             vote_target = self._parse_vote(action, alive, name)
+            if vote_target is None and reasoning:
+                vote_target = self._parse_vote(reasoning, alive, name)
             if vote_target is None:
                 # Track parse failure for format reinforcement next round
                 self._vote_parse_failures[name] = (
@@ -464,7 +466,8 @@ class MafiaGameOrchestrator:
                     ]
                     scored.sort(key=lambda x: -x[1])
                     vote_target = scored[0][0]
-                    raw_preview = action[:200].replace("\n", " ")
+                    raw_source = action if action.strip() else reasoning
+                    raw_preview = raw_source[:200].replace("\n", " ")
                     print(
                         f"  [!] {name}'s vote was unparseable; "
                         f"belief-state fallback -> {vote_target}\n"
@@ -474,7 +477,8 @@ class MafiaGameOrchestrator:
                 elif eligible:
                     vote_target = random.choice(eligible)
                     # Include raw text so failures are diagnosable
-                    raw_preview = action[:200].replace("\n", " ")
+                    raw_source = action if action.strip() else reasoning
+                    raw_preview = raw_source[:200].replace("\n", " ")
                     print(
                         f"  [!] {name}'s vote was unparseable; "
                         f"random fallback -> {vote_target}\n"
@@ -546,6 +550,8 @@ class MafiaGameOrchestrator:
             )
             # Extract a valid target name from the action text
             parsed_target = self._parse_target(action, targets)
+            if not parsed_target and reasoning:
+                parsed_target = self._parse_target(reasoning, targets)
             mafia_actions.append(parsed_target or action.strip())
             final_kill = parsed_target
 
@@ -565,6 +571,8 @@ class MafiaGameOrchestrator:
                 logger.error("[%s] Investigation call failed: %s", self.detective.name, exc)
                 reasoning, action = self._fallback_investigation(self.detective.name, eligible)
             target = self._parse_target(action, eligible)
+            if not target and reasoning:
+                target = self._parse_target(reasoning, eligible)
             if not target and eligible:
                 target = random.choice(eligible)
                 print(
@@ -593,6 +601,8 @@ class MafiaGameOrchestrator:
                 logger.error("[%s] Protection call failed: %s", self.doctor.name, exc)
                 reasoning, action = self._fallback_protection(self.doctor.name, valid)
             protect_target = self._parse_target(action, alive)
+            if not protect_target and reasoning:
+                protect_target = self._parse_target(reasoning, alive)
             if not protect_target:
                 eligible = [p for p in alive if p != self.gs.last_protected]
                 if eligible:
@@ -660,6 +670,8 @@ class MafiaGameOrchestrator:
         Hard filter: A self-vote always returns ``None``.
         """
         text = action.strip()
+        if not text:
+            return None
 
         # ------------------------------------------------------------------
         # Priority 1 — explicit VOTE: tag
@@ -670,6 +682,13 @@ class MafiaGameOrchestrator:
             for target in valid_targets:
                 if target.lower() == tagged.lower() and target != voter:
                     return target
+
+        # ------------------------------------------------------------------
+        # Priority 1b — serialized tool call traces
+        # ------------------------------------------------------------------
+        tool_target = self._extract_target_field(text, valid_targets, exclude=voter)
+        if tool_target is not None:
+            return tool_target
 
         # ------------------------------------------------------------------
         # Priority 2 — intent phrases
@@ -683,6 +702,7 @@ class MafiaGameOrchestrator:
             r"(?:locking\s+(?:in\s+)?(?:on\s+)?)",
             r"(?:voting\s+out\s+)",
             r"(?:I\s+cast\s+(?:my\s+)?vote\s+(?:for\s+)?)",
+            r"(?:cast_vote\s+on\s+)",
         ]
         combined = "|".join(intent_patterns)
         intent_match = re.search(
@@ -697,30 +717,94 @@ class MafiaGameOrchestrator:
         # ------------------------------------------------------------------
         # Priority 3 — last mentioned valid name
         # ------------------------------------------------------------------
-        last_found: str | None = None
-        text_lower = text.lower()
-        for target in valid_targets:
-            # Find the *last* occurrence index for each target
-            idx = text_lower.rfind(target.lower())
-            if idx != -1 and target != voter:
-                if last_found is None or idx > text_lower.rfind(last_found.lower()):
-                    last_found = target
-
-        return last_found  # may be None if nothing matched
+        return self._last_mentioned_valid_name(text, valid_targets, exclude=voter)
 
     @staticmethod
     def _parse_target(action: str, valid_targets: list[str]) -> str | None:
         """Extract a valid player name from free-form action text."""
         text = action.strip()
+        if not text:
+            return None
         # Exact match first
         if text in valid_targets:
             return text
-        # Search for any valid target name mentioned in the text
-        text_lower = text.lower()
+
+        explicit_patterns = [
+            r"TARGET:\s*(\w+)",
+            r"\[NIGHT TARGET\]:\s*(\w+)",
+            r"\[INVESTIGATED\]:\s*(\w+)",
+            r"\[PROTECTING\]:\s*(\w+)",
+        ]
+        for pattern in explicit_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            candidate = match.group(1).strip()
+            for target in valid_targets:
+                if target.lower() == candidate.lower():
+                    return target
+
+        tool_target = MafiaGameOrchestrator._extract_target_field(text, valid_targets)
+        if tool_target is not None:
+            return tool_target
+
+        intent_patterns = [
+            r"(?:choose_target\s+on\s+)",
+            r"(?:targeting\s+)",
+            r"(?:protecting\s+)",
+            r"(?:investigating\s+)",
+            r"(?:going\s+with\s+)",
+        ]
+        combined = "|".join(intent_patterns)
+        intent_match = re.search(rf"(?:{combined})(\w+)", text, re.IGNORECASE)
+        if intent_match:
+            candidate = intent_match.group(1).strip()
+            for target in valid_targets:
+                if target.lower() == candidate.lower():
+                    return target
+
+        return MafiaGameOrchestrator._last_mentioned_valid_name(text, valid_targets)
+
+    @staticmethod
+    def _extract_target_field(
+        text: str,
+        valid_targets: list[str],
+        *,
+        exclude: str | None = None,
+    ) -> str | None:
+        """Extract a target from JSON-like tool text such as `{\"target\":\"Bob\"}`."""
+        match = re.search(
+            r"[\"']target[\"']\s*:\s*[\"'](?P<target>\w+)[\"']",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        candidate = match.group("target").strip()
         for target in valid_targets:
-            if target.lower() in text_lower:
+            if target.lower() == candidate.lower() and target != exclude:
                 return target
         return None
+
+    @staticmethod
+    def _last_mentioned_valid_name(
+        text: str,
+        valid_targets: list[str],
+        *,
+        exclude: str | None = None,
+    ) -> str | None:
+        """Return the last whole-word valid target name mentioned in text."""
+        best_target: str | None = None
+        best_index = -1
+        for target in valid_targets:
+            if target == exclude:
+                continue
+            pattern = re.compile(rf"\b{re.escape(target)}\b", re.IGNORECASE)
+            for match in pattern.finditer(text):
+                if match.start() >= best_index:
+                    best_target = target
+                    best_index = match.start()
+        return best_target
 
     @staticmethod
     def _get_current_consensus(

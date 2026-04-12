@@ -13,6 +13,8 @@ This keeps the frameworks subconscious - agents reason this way
 without narrating the framework name.
 """
 
+from collections.abc import Iterable
+
 # ------------------------------------------------------------------ #
 #  Game Theory                                                         #
 # ------------------------------------------------------------------ #
@@ -254,3 +256,205 @@ pivoting to a new suspect. Answer these THREE questions:
      on the most convenient narrative, not the most supported one.
 Only pivot if you can answer all three without relying on the flip result.
 """
+
+# ------------------------------------------------------------------ #
+#  Systems Theory                                                      #
+# ------------------------------------------------------------------ #
+
+SYSTEMS_THEORY = """
+SYSTEMS THINKING:
+Read the table as a moving system, not a pile of isolated moments.
+Track what is accumulating: trust, suspicion, influence, confirmed
+information, and unresolved pressure.
+
+Watch feedback loops. Pressure can create defensiveness, which creates
+more pressure. Trust can create influence, which creates more trust.
+Bad reads can compound across rounds if nobody interrupts them.
+
+Ask what changes the system, not just the moment. A reveal changes the
+information flow. A vote changes coalition structure. A night kill
+changes who the room trusts next.
+
+Look for leverage points: who sets the agenda, who breaks stale loops,
+who changes what the group notices, and what single intervention will
+produce second-order effects next round.
+"""
+
+# ------------------------------------------------------------------ #
+#  Dialectical Materialism                                             #
+# ------------------------------------------------------------------ #
+
+DIALECTICAL_MATERIALISM = """
+CONTRADICTION ANALYSIS:
+Do not treat every tension as equally important. Find the principal
+contradiction driving the round, then separate it from secondary noise.
+
+Ask what opposing forces are actually in play: caution versus momentum,
+truth-finding versus self-preservation, coalition-building versus
+exposure, consensus versus resistance.
+
+Judge people by material position and incentives in the game, not by
+their stated intent. A player says one thing, but their vote, risk
+tolerance, and timing reveal what they materially need.
+
+Do not fix the symptom if a deeper contradiction is generating it.
+Pressure the contradiction that actually moves the board.
+"""
+
+# ------------------------------------------------------------------ #
+#  Strategic Synthesis                                                 #
+# ------------------------------------------------------------------ #
+
+STRATEGIC_SYNTHESIS = """
+SYNTHESIS PIPELINE:
+When the room gets complex, use this order.
+1. Structural diagnosis: what dynamic is driving the table right now?
+2. Behaviour prediction: given that structure, what will each player or
+   hidden role likely do next?
+3. Tactical move: what single action changes the board in your favour
+   this round?
+
+Do not jump straight to tactics if you have not diagnosed the structure.
+Do not stay in diagnosis if the room needs a move now.
+
+If structure, prediction, and tactic point in different directions,
+name the tension in your REASONING and choose deliberately.
+"""
+
+# ------------------------------------------------------------------ #
+#  Universal Storytelling                                              #
+# ------------------------------------------------------------------ #
+
+UNIVERSAL_STORYTELLING = """
+PERSUASIVE DELIVERY:
+A strong public case is not just correct. It lands.
+Build each statement around one clear claim, one concrete moment or
+quote, and one pressure point aimed at a named player.
+
+Move the room from what is happening now to what follows if your read
+is right. Make the next action feel inevitable, not abstract.
+
+Do not lecture. Do not narrate the theme. Use a specific detail, force
+the question, and let the room feel the turn.
+"""
+
+# ------------------------------------------------------------------ #
+#  Humanizer / Anti-AI Writing                                         #
+# ------------------------------------------------------------------ #
+
+HUMANIZER = """
+HUMAN WRITING:
+Sound like someone in the room, not a polished essay.
+Use concrete facts, exact quotes, and specific reactions. Cut abstract
+framing, summary phrases, and generic lessons.
+
+If a sentence only explains why your point matters, delete it and keep
+the point. Specific beats broad. Lived detail beats polished filler.
+"""
+
+# ------------------------------------------------------------------ #
+#  Signs of AI Writing                                                 #
+# ------------------------------------------------------------------ #
+
+SIGNS_OF_AI_WRITING = """
+SIGNS OF AI WRITING:
+Avoid inflated significance, vague authority, promo tone, stock "insight"
+language, rule-of-three phrasing, markdown-looking structure, em-dash spam,
+and tidy summary endings.
+
+Use plain words. Use "is" and "has" freely. Make one real point at a time.
+If a sentence sounds like a panel talk, a press release, or a chatbot
+trying to sound thoughtful, strip it back.
+"""
+
+# ------------------------------------------------------------------ #
+#  FAT taxonomy                                                       #
+# ------------------------------------------------------------------ #
+
+FAT_TAXONOMY = """
+FAILURE ARCHETYPE CHECK:
+Before you speak, scan for these synthetic failure modes.
+- Clarity compulsion: over-explaining feelings, motives, or theme
+- Probability gravity: canned turns, stock imagery, gesture spam
+- Context drift: repeating yourself, flattening voice, contradicting setup
+- Alignment bleed: softening conflict, moralizing, making everyone too safe
+- Simulation limits: passive agency, samey dialogue, no momentum
+
+If a line feels fluent but dead, cut the explanation, restore agency,
+add one specific detail, and keep the tension alive.
+"""
+
+
+# ------------------------------------------------------------------ #
+#  Framework registry + preset expansion                               #
+# ------------------------------------------------------------------ #
+
+FRAMEWORK_BLOCKS: dict[str, str] = {
+    "game-theory": GAME_THEORY,
+    "sun-tzu-strategy": SUN_TZU,
+    "machiavelli-power": MACHIAVELLI,
+    "carnegie-execution": CARNEGIE_EXECUTION,
+    "carnegie-villager": CARNEGIE_VILLAGER,
+    "carnegie-interpersonal": CARNEGIE_EXECUTION,
+    "behavioural-psych": BEHAVIOURAL_PSYCH,
+    "strategic-glossary": STRATEGIC_GLOSSARY,
+    "incentive-reasoning": INCENTIVE_REASONING,
+    "self-critique": SELF_CRITIQUE,
+    "systems-theory": SYSTEMS_THEORY,
+    "dialectical-materialism": DIALECTICAL_MATERIALISM,
+    "strategic-synthesis": STRATEGIC_SYNTHESIS,
+    "universal-storytelling": UNIVERSAL_STORYTELLING,
+    "humanizer": HUMANIZER,
+    "signs-of-ai-writing": SIGNS_OF_AI_WRITING,
+    "fat-taxonomy": FAT_TAXONOMY,
+}
+
+FRAMEWORK_PRESETS: dict[str, tuple[str, ...]] = {
+    "strategic-synthesis": (
+        "strategic-synthesis",
+        "dialectical-materialism",
+        "systems-theory",
+        "game-theory",
+        "sun-tzu-strategy",
+        "machiavelli-power",
+    ),
+    "humanized-speech": (
+        "universal-storytelling",
+        "humanizer",
+    ),
+}
+
+
+def resolve_framework_names(
+    base: Iterable[str] = (),
+    *,
+    extras: Iterable[str] = (),
+    presets: Iterable[str] = (),
+) -> list[str]:
+    """
+    Expand preset names, validate framework names, and dedupe in order.
+
+    This lets the builder keep role defaults stable while exposing a clean
+    integration point for optional reasoning/style modules.
+    """
+    resolved: list[str] = list(base)
+
+    for preset in presets:
+        if preset not in FRAMEWORK_PRESETS:
+            known = ", ".join(sorted(FRAMEWORK_PRESETS))
+            raise KeyError(f"Unknown framework preset '{preset}'. Known presets: {known}")
+        resolved.extend(FRAMEWORK_PRESETS[preset])
+
+    resolved.extend(extras)
+
+    ordered_unique: list[str] = []
+    seen: set[str] = set()
+    for name in resolved:
+        if name not in FRAMEWORK_BLOCKS:
+            known = ", ".join(sorted(FRAMEWORK_BLOCKS))
+            raise KeyError(f"Unknown framework '{name}'. Known frameworks: {known}")
+        if name not in seen:
+            ordered_unique.append(name)
+            seen.add(name)
+
+    return ordered_unique

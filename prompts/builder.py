@@ -22,9 +22,69 @@ from prompts.frameworks import (
     STRATEGIC_GLOSSARY,
     INCENTIVE_REASONING,
     SELF_CRITIQUE,
+    FRAMEWORK_BLOCKS,
+    resolve_framework_names,
 )
 from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT, CONVERSATIONAL_RULE, CORPORATE_PENALTY, CORPORATE_WORDS
 from prompts.personalities import PERSONALITIES
+
+
+# ------------------------------------------------------------------ #
+#  Trait-driven framework routing                                      #
+# ------------------------------------------------------------------ #
+# Archetypes shape cognition, so they route extra reasoning lenses.
+# Personalities shape public execution, so they route speech/social
+# overlays. Duplicates are removed later by resolve_framework_names().
+#
+# DESIGN GOAL:
+# Keep the mapping balanced, legible, and fun.
+# - Strongly coherent traits get one clean matching lens
+# - Chaotic traits are not over-optimised into clean super-players
+# - Role-specific boosts are used where a trait is believable but only
+#   materially helpful for that role
+
+ARCHETYPE_FRAMEWORK_EXTRAS: dict[str, tuple[str, ...]] = {
+    "Paranoid": (),
+    "Overconfident": (),
+    "Impulsive": (),
+    "Passive": (),
+    "Reactive": (),
+    "Contrarian": ("dialectical-materialism",),
+    "Analytical": ("systems-theory",),
+    "Methodical": ("systems-theory",),
+    "Diplomatic": ("carnegie-interpersonal",),
+    "Stubborn": (),
+    "Volatile": (),
+    "Manipulative": (),
+    "Charming": ("carnegie-interpersonal",),
+}
+
+PERSONALITY_FRAMEWORK_EXTRAS: dict[str, tuple[str, ...]] = {
+    "TheGhost": ("sun-tzu-strategy",),
+    "TheAnalyst": ("systems-theory",),
+    "TheConfessor": (),
+    "TheParasite": (),
+    "TheMartyr": ("universal-storytelling",),
+    "ThePerformer": ("universal-storytelling",),
+    "VibesVoter": (),
+    "MythBuilder": ("universal-storytelling",),
+}
+
+ROLE_ARCHETYPE_FRAMEWORK_EXTRAS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("Villager", "Paranoid"): ("game-theory",),
+    ("Villager", "Overconfident"): ("game-theory",),
+    ("Villager", "Stubborn"): ("game-theory",),
+    ("Villager", "Manipulative"): ("carnegie-interpersonal",),
+    ("Villager", "Reactive"): ("carnegie-interpersonal",),
+    ("Doctor", "Passive"): ("carnegie-interpersonal",),
+    ("Doctor", "Reactive"): ("carnegie-interpersonal",),
+}
+
+ROLE_PERSONALITY_FRAMEWORK_EXTRAS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("Villager", "TheParasite"): ("carnegie-interpersonal",),
+    ("Doctor", "TheMartyr"): ("universal-storytelling",),
+    ("Detective", "TheMartyr"): ("universal-storytelling",),
+}
 
 
 # ------------------------------------------------------------------ #
@@ -226,23 +286,68 @@ Your voice in practice:
 """
 
 
+def _framework_sections(
+    base_names: tuple[str, ...],
+    *,
+    role: str = "",
+    archetype: str = "",
+    personality: str = "",
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> list[str]:
+    """Resolve framework names into prompt blocks, preserving order."""
+    trait_names = (
+        ARCHETYPE_FRAMEWORK_EXTRAS.get(archetype, ())
+        + PERSONALITY_FRAMEWORK_EXTRAS.get(personality, ())
+        + ROLE_ARCHETYPE_FRAMEWORK_EXTRAS.get((role, archetype), ())
+        + ROLE_PERSONALITY_FRAMEWORK_EXTRAS.get((role, personality), ())
+    )
+    names = resolve_framework_names(
+        base_names + trait_names,
+        extras=extra_frameworks,
+        presets=framework_presets,
+    )
+    return [FRAMEWORK_BLOCKS[name] for name in names]
+
+
 # ------------------------------------------------------------------ #
 #  Public builder functions                                            #
 # ------------------------------------------------------------------ #
 
-def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str = "") -> str:
+def build_mafia_prompt(
+    name: str,
+    partner: str,
+    archetype: str,
+    personality: str = "",
+    *,
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> str:
     arc = ARCHETYPES[archetype]
     voice = _personality_block(personality) if personality else _voice_block(archetype)
+    framework_sections = _framework_sections(
+        (
+            "game-theory",
+            "sun-tzu-strategy",
+            "machiavelli-power",
+            "carnegie-execution",
+            "strategic-glossary",
+            "incentive-reasoning",
+            "humanizer",
+            "signs-of-ai-writing",
+            "fat-taxonomy",
+        ),
+        role="Mafia",
+        archetype=archetype,
+        personality=personality,
+        extra_frameworks=extra_frameworks,
+        framework_presets=framework_presets,
+    )
     return "\n\n".join([
         _mafia_goal(name, partner),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
-        GAME_THEORY,
-        SUN_TZU,
-        MACHIAVELLI,
-        CARNEGIE_EXECUTION,
-        STRATEGIC_GLOSSARY,
-        INCENTIVE_REASONING,
+        *framework_sections,
         # Deception Layer: Mafia must commit to lies, not just redirect
         (
             "DECEPTION LAYER (how you survive as Mafia):\n"
@@ -334,18 +439,38 @@ def build_mafia_prompt(name: str, partner: str, archetype: str, personality: str
     ])
 
 
-def build_detective_prompt(name: str, archetype: str, personality: str = "") -> str:
+def build_detective_prompt(
+    name: str,
+    archetype: str,
+    personality: str = "",
+    *,
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> str:
     arc = ARCHETYPES[archetype]
     voice = _personality_block(personality) if personality else _voice_block(archetype)
+    framework_sections = _framework_sections(
+        (
+            "game-theory",
+            "sun-tzu-strategy",
+            "strategic-glossary",
+            "incentive-reasoning",
+            "humanizer",
+            "signs-of-ai-writing",
+            "fat-taxonomy",
+        ),
+        role="Detective",
+        archetype=archetype,
+        personality=personality,
+        extra_frameworks=extra_frameworks,
+        framework_presets=framework_presets,
+    )
     return "\n\n".join([
         _detective_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
-        GAME_THEORY,
-        SUN_TZU,
-        STRATEGIC_GLOSSARY,
-        INCENTIVE_REASONING,
-        # Vote Pattern Analysis — Detectives should track vote patterns as evidence
+        *framework_sections,
+        # Vote Pattern Analysis - Detectives should track vote patterns as evidence
         (
             "VOTE PATTERN ANALYSIS:\n"
             "Your investigations tell you alignment. Vote patterns tell you "
@@ -437,17 +562,37 @@ def build_detective_prompt(name: str, archetype: str, personality: str = "") -> 
     ])
 
 
-def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str:
+def build_doctor_prompt(
+    name: str,
+    archetype: str,
+    personality: str = "",
+    *,
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> str:
     arc = ARCHETYPES[archetype]
     voice = _personality_block(personality) if personality else _voice_block(archetype)
+    framework_sections = _framework_sections(
+        (
+            "game-theory",
+            "sun-tzu-strategy",
+            "strategic-glossary",
+            "incentive-reasoning",
+            "humanizer",
+            "signs-of-ai-writing",
+            "fat-taxonomy",
+        ),
+        role="Doctor",
+        archetype=archetype,
+        personality=personality,
+        extra_frameworks=extra_frameworks,
+        framework_presets=framework_presets,
+    )
     return "\n\n".join([
         _doctor_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
-        GAME_THEORY,
-        SUN_TZU,
-        STRATEGIC_GLOSSARY,
-        INCENTIVE_REASONING,
+        *framework_sections,
         # Iroh Protocol for Doctor
         (
             "IDENTITY REVEAL PROTOCOL (Iroh Protocol):\n"
@@ -514,18 +659,38 @@ def build_doctor_prompt(name: str, archetype: str, personality: str = "") -> str
     ])
 
 
-def build_villager_prompt(name: str, archetype: str, personality: str = "") -> str:
+def build_villager_prompt(
+    name: str,
+    archetype: str,
+    personality: str = "",
+    *,
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> str:
     arc = ARCHETYPES[archetype]
     voice = _personality_block(personality) if personality else _voice_block(archetype)
+    framework_sections = _framework_sections(
+        (
+            "carnegie-villager",
+            "behavioural-psych",
+            "strategic-glossary",
+            "incentive-reasoning",
+            "humanizer",
+            "signs-of-ai-writing",
+            "fat-taxonomy",
+        ),
+        role="Villager",
+        archetype=archetype,
+        personality=personality,
+        extra_frameworks=extra_frameworks,
+        framework_presets=framework_presets,
+    )
     return "\n\n".join([
         _villager_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
-        CARNEGIE_VILLAGER,
-        BEHAVIOURAL_PSYCH,
-        STRATEGIC_GLOSSARY,
-        INCENTIVE_REASONING,
-        # Voter Consistency — track vote alliances for Mafia Steering detection
+        *framework_sections,
+        # Voter Consistency - track vote alliances for Mafia Steering detection
         (
             "VOTER CONSISTENCY (anti-Mafia-Steering tool):\n"
             "Track who votes with whom across rounds. In your REASONING, "
@@ -561,8 +726,17 @@ def build_villager_prompt(name: str, archetype: str, personality: str = "") -> s
     ])
 
 
-def build_narrator_prompt() -> str:
+def build_narrator_prompt(
+    *,
+    extra_frameworks: tuple[str, ...] = (),
+    framework_presets: tuple[str, ...] = (),
+) -> str:
     banned_str = ", ".join(f'"{p}"' for p in NEGATIVE_CONSTRAINTS)
+    framework_sections = _framework_sections(
+        ("humanizer",),
+        extra_frameworks=extra_frameworks,
+        framework_presets=framework_presets,
+    )
     return "\n\n".join([
         _narrator_goal(),
         (
@@ -571,6 +745,7 @@ def build_narrator_prompt() -> str:
             "Use plain words: 'is' not 'serves as', 'has' not 'boasts'.\n"
             "NEVER use these phrases or patterns: " + banned_str
         ),
+        *framework_sections,
         ANTI_AI_STRUCTURE,
         "ALWAYS structure output as:\nREASONING: <internal planning>\nACTION: <announcement text>",
     ])

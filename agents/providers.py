@@ -74,9 +74,10 @@ class BeliefStateProvider(ContextProvider):
             context.extend_instructions(
                 self.source_id,
                 "⚠ VOTE FORMAT REMINDER: Your previous vote could not be parsed. "
-                "Your response MUST contain 'VOTE: [name]' on its own line. "
-                "Use the exact name from the valid targets list. "
-                "Example: 'VOTE: Alice'",
+                "Prefer the cast_vote tool. If you do not use the tool, your FINAL line "
+                "MUST be exactly 'ACTION: VOTE: [name]'. Use one exact name from the "
+                "valid targets list only. No questions, no punctuation, no extra words. "
+                "Example: 'ACTION: VOTE: Alice'",
             )
 
         # Scum-tell flags from BeliefGraph

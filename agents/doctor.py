@@ -1,4 +1,4 @@
-from agents.base import run_agent_stream, format_discussion_prompt
+from agents.base import run_agent_stream, format_discussion_prompt, format_vote_prompt
 from agent_framework import Agent, InMemoryHistoryProvider, SlidingWindowStrategy
 from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
 from agents.middleware import corporate_speak_middleware, ReasoningActionMiddleware, BeliefUpdateMiddleware, ResilientSessionMiddleware, RateLimitMiddleware
@@ -45,12 +45,14 @@ class DoctorAgent:
         targets = [p for p in game_state.get_alive_players() if p != self.name]
         reasoning, action, new_session = await run_agent_stream(
             self.agent,
-            f"{game_state.get_public_state_summary()}\n\n"
-            f"Full discussion:\n{chr(10).join(history)}\n\n"
-            f"You are {self.name}. You CANNOT vote for yourself.\n"
-            f"Valid targets: {', '.join(targets)}\n"
-            f"You MUST call the cast_vote tool OR write ACTION: VOTE: [exact name from valid targets]",
+            format_vote_prompt(
+                game_state.get_public_state_summary(),
+                history,
+                self.name,
+                targets,
+            ),
             session=self.session,
+            prefer_non_stream=True,
         )
         if new_session is not None:
             self.session = new_session
@@ -65,8 +67,10 @@ class DoctorAgent:
             f"You protected {self.last_protected or 'nobody'} last night - cannot repeat.\n\n"
             f"NIGHT. Choose one player to protect.\n"
             f"Valid targets: {', '.join(valid)}\n"
+            f"Decide now. Do NOT continue the conversation.\n"
             f"You MUST call the choose_target tool OR write ACTION: [exact name only]",
             session=self.session,
+            prefer_non_stream=True,
         )
         if new_session is not None:
             self.session = new_session

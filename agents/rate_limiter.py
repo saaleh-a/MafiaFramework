@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from collections.abc import Awaitable, Callable
 
 from config.settings import (
@@ -66,10 +67,12 @@ def _is_server_error(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
     if isinstance(status, int) and 500 <= status < 600:
         return True
-    # Heuristic for string messages
-    for code in ("500", "502", "503", "504"):
-        if code in msg:
-            return True
+    # Heuristic for string messages. Match standalone status codes only,
+    # not arbitrary digit sequences inside response ids.
+    if re.search(r"\berror code:\s*(5\d\d)\b", msg, re.IGNORECASE):
+        return True
+    if re.search(r"\b(500|502|503|504)\b", msg):
+        return True
     return False
 
 

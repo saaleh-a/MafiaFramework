@@ -26,6 +26,23 @@ from engine.orchestrator  import MafiaGameOrchestrator
 from engine.game_log      import print_game_banner, BOLD, RESET, RED
 
 
+def _configure_console_encoding() -> None:
+    """
+    Prefer UTF-8 output on Windows so box-drawing characters do not crash.
+
+    If the host stream does not support reconfigure(), or refuses the change,
+    we leave it alone and rely on the platform default.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+
 async def run_one_game(debug: bool, quiet: bool, reveal_roles: bool, demo: bool = False) -> str:
     setup = create_game(demo=demo)
     print_game_banner(setup.game_state.players)
@@ -54,6 +71,8 @@ async def main(
     seed:         int | None = None,
     demo:         bool = False,
 ) -> None:
+    _configure_console_encoding()
+
     # Validate environment before starting
     issues = validate_environment()
     for issue in issues:

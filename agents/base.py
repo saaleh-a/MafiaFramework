@@ -6,7 +6,16 @@ import logging
 
 from agent_framework import AgentSession
 from prompts.archetypes import CORPORATE_WORDS
-from agents.middleware import _CORPORATE_THRESHOLD, CORPORATE_ENFORCEMENT_HINT, _session_refresh_registry
+from agents.middleware import (
+    _CORPORATE_THRESHOLD,
+    CORPORATE_ENFORCEMENT_HINT,
+    SessionHealthMonitor,
+    _extract_history_from_session,
+    _is_session_expired_error,
+    _refresh_session,
+    _session_refresh_registry,
+    _summarize_history,
+)
 from agents.rate_limiter import rate_limited_call, _is_rate_limit_error, _is_timeout_error
 from config.settings import MAFIA_ENABLE_STREAMING_FALLBACK
 
@@ -76,6 +85,35 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
         f"^ {last_speaker} just said that. Talk TO them. "
         f"Agree, disagree, ask a follow-up, or challenge them directly."
         + _VOTE_BAN_REMINDER
+    )
+
+
+def format_vote_prompt(
+    public_state_summary: str,
+    history: list[str],
+    agent_name: str,
+    targets: list[str],
+    *,
+    private_context: str = "",
+) -> str:
+    """Build a stricter day-vote prompt that strongly prefers exact output."""
+    discussion_text = "\n".join(history) if history else "No prior discussion."
+    private_block = f"{private_context.strip()}\n\n" if private_context.strip() else ""
+    return (
+        f"{public_state_summary}\n\n"
+        f"{private_block}"
+        f"Full discussion:\n{discussion_text}\n\n"
+        f"DAY VOTE. You are {agent_name}. You CANNOT vote for yourself.\n"
+        f"Valid targets: {', '.join(targets)}\n"
+        "This is the vote phase, not discussion. Make one final elimination choice now.\n"
+        "Do NOT continue the discussion. Do NOT ask questions.\n"
+        "Preferred: call the cast_vote tool with target=<exact valid name>.\n"
+        "If you do not use the tool, your FINAL line MUST be exactly:\n"
+        "ACTION: VOTE: <exact name from valid targets>\n"
+        "The ACTION line must contain exactly one player name and no other names.\n"
+        "Do NOT add punctuation, explanations, quotes, or extra words after the name.\n"
+        "Bad: ACTION: I vote Bob because..., ACTION: Bob?, ACTION: cast_vote on Bob.\n"
+        "Good: ACTION: VOTE: Bob"
     )
 
 
@@ -184,9 +222,117 @@ def _extract_tool_result(full_text: str) -> str | None:
     Tool results appear as VOTE: or TARGET: from our @tool functions.
     """
     for prefix in ("VOTE:", "TARGET:"):
-        if prefix in full_text:
-            return full_text.split(prefix, 1)[1].strip()
+        match = re.search(rf"{prefix}\s*(\w+)", full_text, re.IGNORECASE)
+        if match:
+            return f"{prefix} {match.group(1)}"
+
+    # Streaming sometimes surfaces a textual tool trace instead of the tool
+    # return value, e.g. `functions.cast_vote {"target":"Bob", ...}`.
+    tool_trace_patterns = [
+        (
+            re.compile(
+                r"(?:functions\.)?cast_vote\b.*?[\"']target[\"']\s*:\s*[\"'](?P<target>\w+)[\"']",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            "VOTE:",
+        ),
+        (
+            re.compile(
+                r"(?:functions\.)?choose_target\b.*?[\"']target[\"']\s*:\s*[\"'](?P<target>\w+)[\"']",
+                re.IGNORECASE | re.DOTALL,
+            ),
+            "TARGET:",
+        ),
+        (
+            re.compile(r"\bcast_vote\s+on\s+(?P<target>\w+)\b", re.IGNORECASE),
+            "VOTE:",
+        ),
+        (
+            re.compile(r"\bchoose_target\s+on\s+(?P<target>\w+)\b", re.IGNORECASE),
+            "TARGET:",
+        ),
+    ]
+    for pattern, prefix in tool_trace_patterns:
+        match = pattern.search(full_text)
+        if match:
+            return f"{prefix} {match.group('target')}"
     return None
+
+
+def _append_unique_segment(segments: list[str], value: str) -> None:
+    """Append a non-empty text segment once, preserving order."""
+    cleaned = value.strip()
+    if cleaned and cleaned not in segments:
+        segments.append(cleaned)
+
+
+def _extract_structured_tool_content(content) -> str | None:
+    """Recover vote/target outputs from structured tool call/result content."""
+    tool_name = (getattr(content, "name", None) or getattr(content, "tool_name", None) or "").strip()
+    prefix = None
+    if tool_name.endswith("cast_vote"):
+        prefix = "VOTE:"
+    elif tool_name.endswith("choose_target"):
+        prefix = "TARGET:"
+
+    if prefix:
+        try:
+            arguments = content.parse_arguments()
+        except Exception:
+            arguments = None
+        if isinstance(arguments, dict):
+            target = arguments.get("target")
+            if isinstance(target, str) and target.strip():
+                return f"{prefix} {target.strip()}"
+
+    result = getattr(content, "result", None)
+    if isinstance(result, str) and result.strip():
+        normalized = _extract_tool_result(result)
+        return normalized or result.strip()
+
+    for item in getattr(content, "items", None) or []:
+        text = getattr(item, "text", None)
+        if isinstance(text, str) and text.strip():
+            normalized = _extract_tool_result(text)
+            return normalized or text.strip()
+
+    return None
+
+
+def _serialize_agent_response(response) -> str:
+    """
+    Convert AgentResponse content into a parseable text form.
+
+    ``AgentResponse.text`` only includes plain text content. Tool calls/results
+    live in structured ``function_call`` / ``function_result`` contents, so vote
+    or target actions can look blank unless we serialize those explicitly.
+    """
+    segments: list[str] = []
+    response_text = getattr(response, "text", None)
+    if isinstance(response_text, str):
+        _append_unique_segment(segments, response_text)
+
+    for message in getattr(response, "messages", []) or []:
+        for content in getattr(message, "contents", []) or []:
+            content_type = getattr(content, "type", None)
+            if content_type == "text_reasoning":
+                text = getattr(content, "text", None)
+                if isinstance(text, str):
+                    _append_unique_segment(segments, f"REASONING: {text}")
+                continue
+
+            if content_type in {"function_call", "function_result"}:
+                structured = _extract_structured_tool_content(content)
+                if structured:
+                    _append_unique_segment(segments, structured)
+                continue
+
+            if content_type == "text":
+                text = getattr(content, "text", None)
+                if isinstance(text, str):
+                    _append_unique_segment(segments, text)
+
+    return "\n".join(segments)
 
 
 async def run_agent_stream(
@@ -195,6 +341,7 @@ async def run_agent_stream(
     session: AgentSession | None = None,
     *,
     player_name: str = "unknown",
+    prefer_non_stream: bool = False,
 ) -> tuple[str, str, AgentSession | None]:
     """
     Run an agent with streaming and return (reasoning, action, session).
@@ -214,7 +361,7 @@ async def run_agent_stream(
     calls because the ResponseStream text is not available until after
     the stream is consumed).
 
-    Wraps the streaming call with error handling for common Azure
+    Wraps the call with error handling for common Azure
     Foundry issues such as missing model deployments (404).
     Retries up to _MAX_RETRIES times if the model returns a
     content-filter refusal or a corrupted response (e.g. REASONING
@@ -223,14 +370,23 @@ async def run_agent_stream(
     Rate limiting: all API calls go through the global semaphore via
     rate_limited_call(), which handles 429 backoff automatically.
     """
+    if player_name == "unknown":
+        player_name = getattr(agent, "name", None) or player_name
+
     # Capture the session id before the call so we can look up any
     # replacement that ResilientSessionMiddleware registered.
     original_session_id: str | None = (
         session.session_id if session is not None else None
     )
+    refreshed_session: AgentSession | None = None
 
     def _get_refreshed() -> AgentSession | None:
         """Pop and return a refreshed session if middleware replaced it."""
+        nonlocal refreshed_session
+        if refreshed_session is not None:
+            latest = refreshed_session
+            refreshed_session = None
+            return latest
         if original_session_id is None:
             return None
         return _session_refresh_registry.pop(original_session_id, None)
@@ -246,13 +402,42 @@ async def run_agent_stream(
     async def _do_non_stream_call() -> str:
         """Non-streaming fallback — returns the response text."""
         result = await agent.run(prompt, stream=False, session=session)
-        return result.text or ""
+        return _serialize_agent_response(result)
+
+    def _parse_response_text(full_text: str) -> tuple[str, str]:
+        """Normalize a raw model response into (reasoning, action)."""
+        full_text = _strip_refusal(full_text)
+        tool_result = _extract_tool_result(full_text)
+        if tool_result:
+            reasoning, _ = parse_reasoning_action(full_text)
+            return reasoning, tool_result
+        return parse_reasoning_action(full_text)
+
+    async def _try_non_stream_recovery(
+        reason: str,
+    ) -> tuple[str, str, AgentSession | None] | None:
+        """Attempt one non-stream fallback and return a parsed result on success."""
+        if not MAFIA_ENABLE_STREAMING_FALLBACK:
+            return None
+        logger.info("[%s] %s — retrying non-streaming", player_name, reason)
+        try:
+            full_text = await rate_limited_call(
+                _do_non_stream_call,
+                player_name=player_name,
+            )
+            reasoning, action = _parse_response_text(full_text)
+            if action.strip():
+                return reasoning, action, _get_refreshed()
+        except Exception:
+            return None
+        return None
 
     corporate_retried = False
     for attempt in range(_MAX_RETRIES + 1):
         try:
+            call_factory = _do_non_stream_call if prefer_non_stream else _do_stream_call
             full_text = await rate_limited_call(
-                _do_stream_call,
+                call_factory,
                 player_name=player_name,
             )
 
@@ -261,26 +446,24 @@ async def run_agent_stream(
             if _contains_refusal(full_text) and attempt < _MAX_RETRIES:
                 continue
 
-            # Best-effort: strip any residual refusal fragments
-            full_text = _strip_refusal(full_text)
-
-            # Check for structured tool call results first
-            tool_result = _extract_tool_result(full_text)
-            if tool_result:
-                reasoning, _ = parse_reasoning_action(full_text)
-                return reasoning, tool_result, _get_refreshed()
-
-            reasoning, action = parse_reasoning_action(full_text)
+            reasoning, action = _parse_response_text(full_text)
 
             # If the action is empty (e.g. REASONING leaked into ACTION
             # with no real action), retry when possible.
             if not action.strip() and attempt < _MAX_RETRIES:
                 continue
+            if not action.strip():
+                fallback = await _try_non_stream_recovery(
+                    "Empty or malformed streaming action",
+                )
+                if fallback is not None:
+                    return fallback
 
             # Corporate-speak enforcement for streaming: the middleware
             # cannot check streaming responses, so we do it here once.
             if (
-                not corporate_retried
+                not prefer_non_stream
+                and not corporate_retried
                 and attempt < _MAX_RETRIES
                 and _count_corporate(action) >= _CORPORATE_THRESHOLD
             ):
@@ -290,9 +473,32 @@ async def run_agent_stream(
 
             return reasoning, action, _get_refreshed()
         except Exception as exc:
+            if session is not None and _is_session_expired_error(exc):
+                logger.warning(
+                    "[%s] Session expired during %s call; rebuilding locally",
+                    player_name,
+                    "non-stream" if prefer_non_stream else "streaming",
+                )
+                history_summary = _summarize_history(
+                    _extract_history_from_session(session),
+                )
+                new_session = _refresh_session(session, history_summary)
+                refreshed_session = new_session
+                SessionHealthMonitor.remove(session.session_id)
+                SessionHealthMonitor.touch(new_session.session_id)
+                session = new_session
+                if not prefer_non_stream and attempt >= _MAX_RETRIES:
+                    fallback = await _try_non_stream_recovery(
+                        "Session expired after streaming retries",
+                    )
+                    if fallback is not None:
+                        return fallback
+                continue
+
             # Streaming fallback: retry as non-streaming on rate-limit
             if (
-                MAFIA_ENABLE_STREAMING_FALLBACK
+                not prefer_non_stream
+                and MAFIA_ENABLE_STREAMING_FALLBACK
                 and (_is_rate_limit_error(exc) or _is_timeout_error(exc))
                 and attempt < _MAX_RETRIES
             ):
@@ -301,17 +507,9 @@ async def run_agent_stream(
                     player_name, exc,
                 )
                 try:
-                    full_text = await rate_limited_call(
-                        _do_non_stream_call,
-                        player_name=player_name,
-                    )
-                    full_text = _strip_refusal(full_text)
-                    tool_result = _extract_tool_result(full_text)
-                    if tool_result:
-                        reasoning, _ = parse_reasoning_action(full_text)
-                        return reasoning, tool_result, _get_refreshed()
-                    r, a = parse_reasoning_action(full_text)
-                    return r, a, _get_refreshed()
+                    fallback = await _try_non_stream_recovery(str(exc))
+                    if fallback is not None:
+                        return fallback
                 except Exception:
                     pass  # Fall through to normal error handling
 
