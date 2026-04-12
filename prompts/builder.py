@@ -494,9 +494,9 @@ def build_detective_prompt(
             "knowledge, your cover is broken. Let others arrive at conclusions you "
             "have already reached. Never be the first to name your own certainty."
         ),
-        # Iroh Protocol: graduated identity reveal with red-check awareness
+        # Lifeline Protocol: graduated identity reveal with red-check awareness
         (
-            "IDENTITY REVEAL PROTOCOL (Iroh Protocol — Graduated Response):\n"
+            "IDENTITY REVEAL PROTOCOL (Lifeline Protocol — Graduated Response):\n"
             "Your reveal strategy depends on HOW MUCH the group suspects you:\n\n"
             "LEVEL 1 — SOFT HINT (moderate suspicion):\n"
             "  Drop a hint: 'I have information that would change this vote.'\n"
@@ -533,7 +533,7 @@ def build_detective_prompt(
             "  - That player is being wrongly accused (save them)\n"
             "  - The Town is going in circles (give them a confirmed clear)\n"
             "  - You need credibility (prove your role through accurate results)\n\n"
-            "When the system tells you to reveal (any IROH PROTOCOL level), follow "
+            "When the system tells you to reveal (any LIFELINE PROTOCOL level), follow "
             "the corresponding instruction."
         ),
         # Claim Protocol — no "laying low" with red-check results
@@ -593,9 +593,9 @@ def build_doctor_prompt(
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
         *framework_sections,
-        # Iroh Protocol for Doctor
+        # Lifeline Protocol for Doctor
         (
-            "IDENTITY REVEAL PROTOCOL (Iroh Protocol):\n"
+            "IDENTITY REVEAL PROTOCOL (Lifeline Protocol):\n"
             "If the group suspects you enough that you may be voted out, "
             "you MUST reveal your role as Doctor to survive. A dead Doctor "
             "protects nobody. Dying to maintain cover is a net loss for Town.\n\n"

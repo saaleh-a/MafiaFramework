@@ -136,7 +136,7 @@ class MafiaGameOrchestrator:
             belief_state["role"] = agent.role
             belief_state["name"] = name
 
-            # Pass detective findings for Iroh Protocol red-check detection
+            # Pass detective findings for Lifeline Protocol red-check detection
             if agent.role == "Detective" and hasattr(agent, "findings"):
                 belief_state["findings"] = agent.findings
             else:
