@@ -2295,6 +2295,7 @@ class TestGameStateWinConditions(unittest.TestCase):
         gs = self._make_state({"A": "Mafia", "B": "Villager", "C": "Villager"})
         gs.eliminate_player("A")
         self.assertEqual(gs.check_win_condition(), "Town")
+        self.assertEqual(gs.eliminated_this_round, "A")
 
     def test_mafia_wins_when_equal_to_town(self):
         gs = self._make_state({"A": "Mafia", "B": "Villager"})
@@ -3322,6 +3323,7 @@ class TestSummaryAgentCompression(unittest.TestCase):
         ]
         result = SummaryAgent().compress_discussion_history(history, gs)
         self.assertTrue(any("[EARLIER SUMMARY]" in r for r in result))
+        self.assertLess(len(result), len(history))
 
     def test_round_5_plus_critical_only(self):
         from agents.summary import SummaryAgent
