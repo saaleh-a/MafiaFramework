@@ -27,14 +27,14 @@ class BeliefStateProvider(ContextProvider):
     """
     Injects the agent's current suspicion state, frustration warnings,
     overconfidence gates, scum-tell flags, temporal slip alerts, and
-    Iroh Protocol reveal instructions into each agent call.
+    Self-Preservation Protocol reveal instructions into each agent call.
 
     State keys used in session.state["belief"]:
         suspicion:      SuspicionState for this agent
         archetype:      str archetype name
         graph:          BeliefGraph (shared)
         temporal:       TemporalConsistencyChecker (shared)
-        all_beliefs:    dict[str, SuspicionState] (for Iroh Protocol)
+        all_beliefs:    dict[str, SuspicionState] (for Self-Preservation Protocol)
         role:           str role name
         name:           str player name
     """
@@ -93,7 +93,7 @@ class BeliefStateProvider(ContextProvider):
             if slips:
                 context.extend_instructions(self.source_id, slips)
 
-        # Iroh Protocol: graduated identity reveal
+        # Self-Preservation Protocol: graduated identity reveal
         role: str = state.get("role", "")
         name: str = state.get("name", "")
         all_beliefs: dict[str, SuspicionState] | None = state.get("all_beliefs")
@@ -106,31 +106,31 @@ class BeliefStateProvider(ContextProvider):
                 findings = state.get("findings", {})
                 has_red_check = any(v == "Mafia" for v in findings.values())
 
-            iroh_level = suspicion.get_iroh_level(
+            spp_level = suspicion.get_spp_level(
                 name, all_beliefs, has_red_check=has_red_check,
             )
-            if iroh_level == "soft_hint":
+            if spp_level == "soft_hint":
                 context.extend_instructions(
                     self.source_id,
-                    f"⚠ IROH PROTOCOL (SOFT HINT): You ({name}) are attracting "
+                    f"⚠ SELF-PRESERVATION PROTOCOL (SOFT HINT): You ({name}) are attracting "
                     f"moderate suspicion. Drop a hint that you have information "
                     f"that would change the current vote. Say something like "
                     f"'I have information that would change this vote' without "
                     f"revealing your role yet. This signals value to the Town.",
                 )
-            elif iroh_level == "hard_claim":
+            elif spp_level == "hard_claim":
                 context.extend_instructions(
                     self.source_id,
-                    f"⚠ IROH PROTOCOL (HARD CLAIM): Suspicion against you "
+                    f"⚠ SELF-PRESERVATION PROTOCOL (HARD CLAIM): Suspicion against you "
                     f"({name}) is rising dangerously. You SHOULD claim your "
                     f"role as {role} conditionally: 'I am {role}. I will "
                     f"reveal what I know if the vote is not redirected.' "
                     f"This forces the Town to reconsider.",
                 )
-            elif iroh_level == "full_reveal":
+            elif spp_level == "full_reveal":
                 context.extend_instructions(
                     self.source_id,
-                    f"⚠ IROH PROTOCOL (FULL REVEAL): You ({name}) are about "
+                    f"⚠ SELF-PRESERVATION PROTOCOL (FULL REVEAL): You ({name}) are about "
                     f"to be eliminated. You MUST reveal your role as {role} "
                     f"immediately with ALL information you have. Dying with "
                     f"your role hidden helps nobody. Reveal NOW.",
