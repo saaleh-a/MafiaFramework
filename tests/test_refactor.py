@@ -3560,10 +3560,11 @@ class TestGameManagerPlayerNames(unittest.TestCase):
     def test_role_distribution(self):
         from engine.game_manager import PLAYER_NAMES, _build_role_distribution
         roles = _build_role_distribution(len(PLAYER_NAMES))
-        self.assertEqual(roles.count("Mafia"), 2)
+        # 11 players → _recommended_mafia_count(11) = 3 (11 > 10, ≤ 15)
+        self.assertEqual(roles.count("Mafia"), 3)
         self.assertEqual(roles.count("Detective"), 1)
         self.assertEqual(roles.count("Doctor"), 1)
-        self.assertEqual(roles.count("Villager"), 7)
+        self.assertEqual(roles.count("Villager"), 6)
 
 
 # ===================================================================== #
@@ -3712,6 +3713,217 @@ class TestFrameworkBlocks(unittest.TestCase):
         for name, block in FRAMEWORK_BLOCKS.items():
             self.assertIsInstance(block, str, f"{name} is not a string")
             self.assertGreater(len(block.strip()), 0, f"{name} is empty")
+
+
+# ===================================================================== #
+#  Failure A: Personality constraint exhaustion graceful degradation      #
+# ===================================================================== #
+
+class TestPersonalityConstraintExhaustion(unittest.TestCase):
+    """Verify _pick_personality_constrained never crashes (Failure A)."""
+
+    def test_no_crash_with_all_slots_exhausted(self):
+        """When all personality slots are filled, cap relaxation should
+        return a valid personality rather than raising ValueError."""
+        from engine.game_manager import _pick_personality_constrained
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Simulate 8 players already assigned: exhaust all caps
+        # Non-consensus cap is 2, consensus cap is 1.
+        counts = {
+            "TheGhost": 2, "TheAnalyst": 2,
+            "TheConfessor": 1, "TheParasite": 1,
+            "TheMartyr": 2, "ThePerformer": 1,
+            "VibesVoter": 2, "MythBuilder": 1,
+        }
+        # 9th player should get a personality via cap relaxation
+        result = _pick_personality_constrained(
+            "Villager", counts, demo=False, archetype="Paranoid",
+        )
+        self.assertIn(result, ALL_PERSONALITIES)
+
+    def test_no_crash_with_heavy_exclusions(self):
+        """Role+archetype combos that exclude many personalities must
+        still return a valid personality instead of crashing."""
+        from engine.game_manager import _pick_personality_constrained
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Detective+Passive: excludes TheParasite, ThePerformer, MythBuilder, TheGhost
+        counts = {
+            "TheAnalyst": 2, "TheConfessor": 1,
+            "VibesVoter": 2, "TheMartyr": 2,
+        }
+        result = _pick_personality_constrained(
+            "Detective", counts, demo=False, archetype="Passive",
+        )
+        self.assertIn(result, ALL_PERSONALITIES)
+        # Should NOT be in the excluded set
+        self.assertNotIn(result, {"TheParasite", "ThePerformer", "MythBuilder", "TheGhost"})
+
+
+# ===================================================================== #
+#  Failure B: Credential error detection in rate limiter                 #
+# ===================================================================== #
+
+class TestCredentialErrorDetection(unittest.TestCase):
+    """Verify that Azure CLI credential errors are classified as timeout
+    errors so they are retried instead of crashing (Failure B)."""
+
+    def test_credential_unavailable_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("CredentialUnavailableError: az account get-access-token failed")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_credential_class_name_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+
+        class CredentialUnavailableError(Exception):
+            pass
+
+        exc = CredentialUnavailableError("token acquisition failed")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_az_timeout_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("AzureCliCredential process timed out")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_normal_error_not_false_positive(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("DeploymentNotFound: model does not exist")
+        self.assertFalse(_is_timeout_error(exc))
+
+
+# ===================================================================== #
+#  Failure C: Identity disambiguation in discussion prompt               #
+# ===================================================================== #
+
+class TestIdentityDisambiguation(unittest.TestCase):
+    """Verify that discussion prompts include identity disambiguation
+    when the agent's name appears in other players' messages (Failure C)."""
+
+    def test_identity_note_in_discussion_prompt(self):
+        from agents.base import format_discussion_prompt
+        history = ["Bob: Alice has been really quiet."]
+        prompt = format_discussion_prompt(history, "Alice")
+        self.assertIn("IDENTITY NOTE", prompt)
+        self.assertIn("You are Alice", prompt)
+
+    def test_identity_note_with_multiple_messages(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Alice seems suspicious to me.",
+            "Charlie: I agree, Alice hasn't said much.",
+        ]
+        prompt = format_discussion_prompt(history, "Alice")
+        self.assertIn("IDENTITY NOTE", prompt)
+        self.assertIn("those are NOT your words", prompt)
+
+    def test_no_identity_note_when_first_speaker(self):
+        """First speaker gets no identity note since nobody mentioned them."""
+        from agents.base import format_discussion_prompt
+        prompt = format_discussion_prompt([], "Alice")
+        self.assertNotIn("IDENTITY NOTE", prompt)
+
+
+# ===================================================================== #
+#  Failure D: Streaming chunk dedup removed                              #
+# ===================================================================== #
+
+class TestStreamingChunkDedup(unittest.TestCase):
+    """Verify parse_reasoning_action handles repeated small tokens
+    correctly after the per-chunk dedup was removed (Failure D)."""
+
+    def test_repeated_tokens_preserved(self):
+        """Repeated small words like 'the' or 'I' should be preserved."""
+        from agents.base import parse_reasoning_action
+        text = (
+            "REASONING: I think the suspect is the one who talked the most. "
+            "ACTION: I'm voting for Bob."
+        )
+        reasoning, action = parse_reasoning_action(text)
+        # All 'the' instances should be preserved
+        self.assertIn("the suspect", reasoning)
+        self.assertIn("the one", reasoning)
+        self.assertIn("Bob", action)
+
+    def test_garbled_action_boundary(self):
+        """If ACTION: appears mid-garble, rsplit should handle it."""
+        from agents.base import parse_reasoning_action
+        text = "REASONING: I think carefully. ACTION: VOTE: Bob"
+        reasoning, action = parse_reasoning_action(text)
+        self.assertIn("VOTE: Bob", action)
+
+
+# ===================================================================== #
+#  Failure E: Early-round consensus collapse protection                  #
+# ===================================================================== #
+
+class TestEarlyRoundConsensusProtection(unittest.TestCase):
+    """Verify that the vote coordination pipeline provides early-round
+    caution when confidence is low (Failure E)."""
+
+    def _make_orchestrator(self):
+        """Build a minimal orchestrator for testing coordination logic."""
+        from unittest.mock import MagicMock
+        from engine.game_state import GameState, PlayerState
+        from config.settings import MAFIA_VOTE_CONFIDENCE_THRESHOLD
+
+        players = {
+            "Alice": PlayerState(name="Alice", role="Villager", archetype="Paranoid"),
+            "Bob": PlayerState(name="Bob", role="Villager", archetype="Passive"),
+            "Charlie": PlayerState(name="Charlie", role="Villager", archetype="Contrarian"),
+            "Dan": PlayerState(name="Dan", role="Villager", archetype="Stubborn"),
+            "Eve": PlayerState(name="Eve", role="Detective", archetype="Analytical"),
+            "Frank": PlayerState(name="Frank", role="Mafia", archetype="Manipulative"),
+        }
+        gs = GameState(players=players)
+        gs.round_number = 1
+
+        orch = MagicMock()
+        orch.gs = gs
+        orch._current_vote_shortlist = ["Alice", "Bob"]
+        orch._belief_graph = MagicMock()
+        orch._belief_graph.evasion_scores = {}
+        orch.detective = MagicMock()
+        orch.detective.name = "Eve"
+        orch.detective.findings = {}
+
+        return orch, MAFIA_VOTE_CONFIDENCE_THRESHOLD
+
+    def test_early_round_warning_in_coordination_note(self):
+        """In round 1, low-confidence coordination notes should warn
+        about unreliable consensus."""
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orch, threshold = self._make_orchestrator()
+
+        note = MafiaGameOrchestrator._build_coordination_note(
+            orch,
+            "Charlie",
+            ["Alice", "Bob", "Dan", "Frank"],
+            "Alice",
+            "consensus",
+            0.20,  # well below threshold
+        )
+        self.assertIn("EARLY GAME WARNING", note)
+
+    def test_no_early_warning_in_late_rounds(self):
+        """In round 3+, no early-game warning should appear."""
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orch, threshold = self._make_orchestrator()
+        orch.gs.round_number = 3
+
+        note = MafiaGameOrchestrator._build_coordination_note(
+            orch,
+            "Charlie",
+            ["Alice", "Bob", "Dan", "Frank"],
+            "Alice",
+            "consensus",
+            0.20,
+        )
+        self.assertNotIn("EARLY GAME WARNING", note)
 
 
 if __name__ == "__main__":

@@ -175,11 +175,19 @@ def _pick_personality_constrained(
         eligible = [p for p in pool if p not in excluded]
 
     if not eligible:
-        raise ValueError(
-            f"No valid personality for role={role} archetype={archetype} "
-            f"with current counts {current_counts}. "
-            f"Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
+        # All personalities excluded for this role+archetype combo after
+        # cap relaxation.  This should be unreachable with the current
+        # exclusion tables, but degrade gracefully instead of crashing:
+        # return a random personality from the full pool, ignoring all
+        # exclusions.  A mismatched personality is better than no game.
+        import sys
+        print(
+            f"  [⚠] Personality pool exhausted for role={role} "
+            f"archetype={archetype} — selecting random personality "
+            f"(all constraints relaxed).",
+            file=sys.stderr,
         )
+        return random.choice(pool)
     if not demo:
         return random.choice(eligible)
 

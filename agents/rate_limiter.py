@@ -77,11 +77,24 @@ def _is_server_error(exc: Exception) -> bool:
 
 
 def _is_timeout_error(exc: Exception) -> bool:
-    """Return True if *exc* is a timeout/connection error."""
+    """Return True if *exc* is a timeout/connection error.
+
+    Also matches Azure CLI credential failures (``CredentialUnavailableError``,
+    ``az account get-access-token`` subprocess timeouts) so they are retried
+    once rather than crashing the game.
+    """
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
         return True
     msg = str(exc).lower()
-    return "timeout" in msg or "timed out" in msg
+    if "timeout" in msg or "timed out" in msg:
+        return True
+    # Azure CLI credential failures — subprocess hangs or token unavailable
+    if "credentialunavailable" in msg or "credential" in msg:
+        return True
+    cls_name = type(exc).__name__.lower()
+    if "credential" in cls_name:
+        return True
+    return False
 
 
 # ------------------------------------------------------------------ #

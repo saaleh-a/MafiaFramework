@@ -282,6 +282,15 @@ class MafiaGameOrchestrator:
         if top_score >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
             return top_target, top_score, "belief"
 
+        # Early-round protection: in rounds 1-2, prefer the agent's own
+        # (low-confidence) belief over room consensus.  Consensus in early
+        # rounds is unreliable and self-reinforcing — the first accusation
+        # can snowball into a unanimous miskill.  Returning the agent's
+        # own top target with its actual score lets the coordination note
+        # flag the low confidence and encourages independent reasoning.
+        if self.gs.round_number <= 2:
+            return top_target, top_score, "belief"
+
         consensus_scores = self._compute_room_suspicion(legal)
         consensus_ranked = sorted(
             legal,
@@ -309,8 +318,24 @@ class MafiaGameOrchestrator:
             "CONSENSUS TRACKING:",
             f"Top pressure targets: {', '.join(display_shortlist)}.",
             f"Recommended vote for you: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
-            "Pick from the shortlist unless you have a real reason to override it.",
         ]
+        # Early-round caution: in rounds 1-2 with low confidence, warn
+        # agents that consensus is unreliable and encourage independent
+        # reasoning over herd following.
+        if self.gs.round_number <= 2 and confidence < MAFIA_VOTE_CONFIDENCE_THRESHOLD:
+            note.append(
+                "⚠ EARLY GAME WARNING: It is round " + str(self.gs.round_number) + ". "
+                "There is very little evidence yet. The consensus is based on "
+                "first impressions, not confirmed information. Do NOT default to "
+                "the room's direction just because others are voting that way. "
+                "Think about WHO started the pressure and WHY. An early bandwagon "
+                "with no evidence is exactly how Mafia steers Town into eliminating "
+                "their own power roles. Vote on YOUR read, not the room's momentum."
+            )
+        else:
+            note.append(
+                "Pick from the shortlist unless you have a real reason to override it.",
+            )
         if self._belief_graph.evasion_scores:
             evasion_text = ", ".join(
                 f"{player}:{score}"
@@ -1031,7 +1056,14 @@ class MafiaGameOrchestrator:
             await self._narrate("A quiet dawn. Nobody died tonight.")
 
     async def _narrate(self, prompt: str) -> None:
-        reasoning, announcement = await self.narrator.announce(prompt, self.gs)
+        try:
+            reasoning, announcement = await self.narrator.announce(prompt, self.gs)
+        except Exception as exc:
+            logger.error("[Narrator] Narration failed: %s", exc)
+            # Graceful degradation: produce a minimal announcement so the
+            # game can continue without a narrator flourish.
+            reasoning = ""
+            announcement = prompt
         self.gs.log("Narrator", "Narrator", "Impartial", reasoning, announcement)
         self._print("Narrator", "Narrator", "Impartial", reasoning, announcement)
 
