@@ -381,6 +381,7 @@ class BeliefGraph:
 
     # player_name -> list of scum-tell descriptions
     flags: dict[str, list[str]] = field(default_factory=dict)
+    evasion_scores: dict[str, int] = field(default_factory=dict)
 
     # Track vote timing and discussion contributions
     _discussion_counts: dict[str, int] = field(default_factory=dict)
@@ -399,6 +400,78 @@ class BeliefGraph:
             p for p in alive_players
             if self._discussion_counts.get(p, 0) <= threshold
         ]
+
+    def check_evasion(
+        self,
+        speaker: str,
+        action: str,
+        discussion_history: list[str],
+        alive_players: list[str],
+    ) -> str | None:
+        """
+        Flag when a player appears to dodge a recent direct question.
+
+        Heuristic:
+          - Find the most recent line that explicitly addresses the speaker
+          - Treat it as direct pressure if it asks a question or demands an exact move/name
+          - If the reply re-asks, redirects, or fails to name anyone when a name was demanded,
+            increment evasion
+        """
+        recent_prompt = ""
+        speaker_name = speaker.lower()
+        for line in reversed(discussion_history[-6:]):
+            if line.startswith(f"{speaker}:"):
+                continue
+            lowered = line.lower()
+            if speaker_name not in lowered:
+                continue
+            if "?" in lowered or any(
+                marker in lowered for marker in (
+                    "give one name", "say the exact", "exact move",
+                    "exact result", "answer the actual", "who made",
+                    "why did", "what did", "say who",
+                )
+            ):
+                recent_prompt = line
+                break
+
+        if not recent_prompt:
+            return None
+
+        asks_for_name = any(
+            marker in recent_prompt.lower() for marker in (
+                "give one name", "say who", "who made", "name the",
+                "which player", "who looked",
+            )
+        )
+        mentioned_names = [
+            player for player in alive_players
+            if player != speaker and player.lower() in action.lower()
+        ]
+        redirects_with_question = "?" in action or any(
+            marker in action.lower() for marker in (
+                "what about", "why is", "why are you", "do you think",
+            )
+        )
+
+        dodged = False
+        if asks_for_name and not mentioned_names:
+            dodged = True
+        elif asks_for_name and redirects_with_question and len(mentioned_names) <= 1:
+            dodged = True
+        elif recent_prompt.lower().count("exact") > 0 and "exact" not in action.lower() and redirects_with_question:
+            dodged = True
+
+        if not dodged:
+            return None
+
+        self.evasion_scores[speaker] = self.evasion_scores.get(speaker, 0) + 1
+        flag = (
+            f"EVASION: {speaker} sidestepped a direct question "
+            f"(score {self.evasion_scores[speaker]})"
+        )
+        self.flags.setdefault(speaker, []).append(flag)
+        return flag
 
     def check_late_bandwagon(
         self, voter: str, target: str, reasoning: str,

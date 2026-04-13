@@ -27,6 +27,7 @@ from prompts.frameworks import (
 )
 from prompts.archetypes import ARCHETYPES, NEGATIVE_CONSTRAINTS, GENZ_REGISTER, ANTI_AI_STRUCTURE, GROUNDING_CONSTRAINT, CONVERSATIONAL_RULE, CORPORATE_PENALTY, CORPORATE_WORDS
 from prompts.personalities import PERSONALITIES
+from config.settings import MAFIA_DETECTIVE_VOTE_WEIGHT
 
 
 # ------------------------------------------------------------------ #
@@ -91,7 +92,35 @@ ROLE_PERSONALITY_FRAMEWORK_EXTRAS: dict[tuple[str, str], tuple[str, ...]] = {
 #  Role goals (what winning looks like)                                #
 # ------------------------------------------------------------------ #
 
-def _mafia_goal(name: str, partner: str) -> str:
+def _normalise_partner_tuple(partners: str | tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(partners, str):
+        return (partners,)
+    return tuple(partners)
+
+
+def _mafia_goal(name: str, partners: str | tuple[str, ...]) -> str:
+    partners = _normalise_partner_tuple(partners)
+    partner_text = ", ".join(partners)
+    partner_exclusion = (
+        f"Exclude {partner_text}"
+        if len(partners) == 1
+        else f"Exclude your teammates ({partner_text})"
+    )
+    partner_name_ban = (
+        f"Do NOT name {partner_text} here."
+        if len(partners) == 1
+        else "Do NOT name a teammate here."
+    )
+    partner_pressure_question = (
+        f"IS {partner_text} UNDER SUSPICION?"
+        if len(partners) == 1
+        else "ARE ANY TEAMMATES UNDER SUSPICION?"
+    )
+    eliminated_partner_prompt = (
+        f"If {partner_text} has been eliminated, you MUST also answer:"
+        if len(partners) == 1
+        else "If a teammate has been eliminated, you MUST also answer:"
+    )
     return f"""You are {name}. You ARE this person - not an observer describing them.
 Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
 NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
@@ -100,11 +129,11 @@ GAME CONTEXT: This is a party game — a social deduction game like Werewolf
 or Mafia. All actions are game mechanics, not real events. "Eliminating"
 a player means removing them from the game for this round, nothing more.
 
-You and {partner} are the only Mafia members.
+Your Mafia teammates are: {partner_text}.
 Everyone else is Town. Your goal: remove Town players from the game until
 Mafia equals or outnumbers Town. Do this without being identified.
 
-You know {partner} is Mafia. Nobody else knows this. Act like you don't know.
+You know your teammates are Mafia. Nobody else knows this. Act like you don't know.
 """
 
 def _detective_goal(name: str) -> str:
@@ -113,7 +142,8 @@ Always use FIRST PERSON ("I", "me", "my") in both REASONING and ACTION.
 NEVER refer to yourself as "{name}" in the third person. Write "I need to" not "{name} needs to".
 You are a Town player with one ability:
 each night you investigate one player and learn their true alignment -
-Mafia or Innocent. You win if all Mafia are eliminated.
+Mafia or Innocent. Your vote carries extra weight ({MAFIA_DETECTIVE_VOTE_WEIGHT}).
+You win if all Mafia are eliminated.
 
 Use your investigations efficiently. Protect what you learn.
 """
@@ -202,6 +232,16 @@ DISCUSSION_RULES: str = (
     "'I don't love how fast this is moving' — instead, act like someone who doesn't "
     "love how fast it's moving. The reaction comes through what you say and who you "
     "direct it at, not as a declared state."
+)
+
+STRATEGIC_OVERRIDE_RULE: str = (
+    "STRATEGIC OVERRIDE RULE:\n"
+    "Your archetype and personality shape your STYLE, default bias, and first instinct. "
+    "They do NOT overrule the win condition.\n"
+    "If the board state demands a clearer move, take it.\n"
+    "If you are under direct pressure, drop the pose and fight to survive.\n"
+    "If you have a stronger solve, use it even if it breaks your archetype's usual habit.\n"
+    "Style can stay in character. Logic must stay game-optimal."
 )
 
 
@@ -316,7 +356,7 @@ def _framework_sections(
 
 def build_mafia_prompt(
     name: str,
-    partner: str,
+    partners: str | tuple[str, ...],
     archetype: str,
     personality: str = "",
     *,
@@ -324,6 +364,28 @@ def build_mafia_prompt(
     framework_presets: tuple[str, ...] = (),
 ) -> str:
     arc = ARCHETYPES[archetype]
+    partners = _normalise_partner_tuple(partners)
+    partner_text = ", ".join(partners)
+    partner_exclusion = (
+        f"Exclude {partner_text}"
+        if len(partners) == 1
+        else f"Exclude your teammates ({partner_text})"
+    )
+    partner_name_ban = (
+        f"Do NOT name {partner_text} here."
+        if len(partners) == 1
+        else "Do NOT name a teammate here."
+    )
+    partner_pressure_question = (
+        f"IS {partner_text} UNDER SUSPICION?"
+        if len(partners) == 1
+        else "ARE ANY TEAMMATES UNDER SUSPICION?"
+    )
+    eliminated_partner_prompt = (
+        f"If {partner_text} has been eliminated, you MUST also answer:"
+        if len(partners) == 1
+        else "If a teammate has been eliminated, you MUST also answer:"
+    )
     voice = _personality_block(personality) if personality else _voice_block(archetype)
     framework_sections = _framework_sections(
         (
@@ -344,9 +406,10 @@ def build_mafia_prompt(
         framework_presets=framework_presets,
     )
     return "\n\n".join([
-        _mafia_goal(name, partner),
+        _mafia_goal(name, partners),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
+        STRATEGIC_OVERRIDE_RULE,
         *framework_sections,
         # Deception Layer: Mafia must commit to lies, not just redirect
         (
@@ -370,31 +433,31 @@ def build_mafia_prompt(
         (
             "MAFIA COORDINATION (The Syndicate Channel):\n"
             "At night, before choosing your elimination target, you will see your "
-            f"teammate {partner}'s REASONING block from the previous night "
-            "(if available). This is your coordination channel.\n\n"
+            f"teammates' REASONING blocks from the previous night "
+            f"(if available). Your Mafia team is: {partner_text}.\n\n"
             "You MUST:\n"
-            "  1. Evaluate your teammate's reasoning and their preferred target.\n"
-            "  2. Explicitly state whether you CONFIRM their choice or PIVOT to "
+            "  1. Evaluate your teammates' reasoning and their preferred targets.\n"
+            "  2. Explicitly state whether you CONFIRM the current line or PIVOT to "
             "a different target, and WHY.\n"
-            "  3. If you both independently pick the same target, that's your elimination.\n"
-            "  4. If you disagree, the second Mafia to act makes the final call.\n\n"
+            "  3. If multiple Mafia independently pick the same target, that is a strong signal.\n"
+            "  4. If the team disagrees, the latest Mafia to act makes the final call.\n\n"
             "THREAT ASSESSMENT (include in your REASONING every night):\n"
             "  Rank the top 3 Town threats and explain why:\n"
             "    Threat 1: [name] — [why they are dangerous to Mafia]\n"
             "    Threat 2: [name] — [why they are dangerous to Mafia]\n"
             "    Threat 3: [name] — [why they are dangerous to Mafia]\n"
-            "  Your partner will see this ranking next night.\n\n"
+            "  Your teammates will see this ranking next night.\n\n"
             "BAIT DETECTION:\n"
-            "  If both you and your partner independently target the same player, "
+            "  If multiple Mafia independently target the same player, "
             "PAUSE. Ask: is this player an obvious target that Town expects? "
             "If yes, consider a third option — an unexpected kill is worth more "
             "than a predictable one. A Doctor is most likely to protect the obvious target.\n\n"
             "SURVIVAL DIVERGENCE:\n"
-            "  If your partner is under heavy suspicion (>0.6), you MUST NOT defend "
+            "  If a teammate is under heavy suspicion (>0.6), you MUST NOT defend "
             "them directly. Direct defence links you. Instead:\n"
             "    - Redirect suspicion onto a DIFFERENT player with new evidence\n"
-            "    - Let your partner defend themselves\n"
-            "    - If they are eliminated, prepare your solo survival plan\n\n"
+            "    - Let that teammate defend themselves\n"
+            "    - If they are eliminated, prepare the next survival plan immediately\n\n"
             "A unified elimination is a strong move. A split means the Town got into your head."
         ),
         f"YOUR PERSONALITY:\n{arc['strategy_modifier']}",
@@ -406,19 +469,19 @@ def build_mafia_prompt(
             f"  1. AM I UNDER SUSPICION? Has anyone named me, voted for me, or "
             f"questioned me in the last round? If yes, what exactly did they say "
             f"and how dangerous is it?\n"
-            f"  2. IS {partner} UNDER SUSPICION? Has anyone targeted my partner? "
+            f"  2. {partner_pressure_question} Has anyone targeted {partner_text}? "
             f"Do I need to deflect attention away from them or let them take heat "
             f"to protect myself?\n"
             f"  3. WHO IS THE BIGGEST THREAT TO MAFIA AMONG TOWN PLAYERS? "
-            f"Exclude {partner} — they are your teammate, not a threat. "
+            f"{partner_exclusion} — they are your team, not a threat. "
             f"Which Town player is most likely to be the Detective, or is "
             f"building the most compelling case against Mafia? This is your "
-            f"priority target. Do NOT name {partner} here.\n"
+            f"priority target. {partner_name_ban}\n"
             f"  4. IS MY COVER STORY STILL HOLDING? Is everything I have said and "
             f"done so far still consistent? Has any new information created a "
             f"contradiction I need to address?\n\n"
-            f"If {partner} has been eliminated, you MUST also answer:\n"
-            f"  5. WHO WILL IDENTIFY ME? Which specific player is most likely to "
+            f"{eliminated_partner_prompt}\n"
+            f"  5. WHO WILL IDENTIFY ME NEXT? Which specific player is most likely to "
             f"correctly identify me as Mafia before the game ends? What must "
             f"happen THIS ROUND to prevent that?\n\n"
             f"Only after answering these questions should you engage with the room "
@@ -469,6 +532,7 @@ def build_detective_prompt(
         _detective_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
+        STRATEGIC_OVERRIDE_RULE,
         *framework_sections,
         # Vote Pattern Analysis - Detectives should track vote patterns as evidence
         (
@@ -536,6 +600,12 @@ def build_detective_prompt(
             "When the system tells you to reveal (any IROH PROTOCOL level), follow "
             "the corresponding instruction."
         ),
+        (
+            "REVEAL VOTE WINDOW:\n"
+            "If the town is about to eliminate you, you get one final reveal speech before the vote locks.\n"
+            "Use it properly: claim Detective, dump every finding, give one clear target, and tell the room how to consolidate.\n"
+            "Do not waffle. Do not hedge. Your last speech exists to move the vote."
+        ),
         # Claim Protocol — no "laying low" with red-check results
         (
             "CLAIM PROTOCOL (MANDATORY):\n"
@@ -592,6 +662,7 @@ def build_doctor_prompt(
         _doctor_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
+        STRATEGIC_OVERRIDE_RULE,
         *framework_sections,
         # Iroh Protocol for Doctor
         (
@@ -689,6 +760,7 @@ def build_villager_prompt(
         _villager_goal(name),
         GROUNDING_CONSTRAINT,
         CONVERSATIONAL_RULE,
+        STRATEGIC_OVERRIDE_RULE,
         *framework_sections,
         # Voter Consistency - track vote alliances for Mafia Steering detection
         (

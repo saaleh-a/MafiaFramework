@@ -102,19 +102,38 @@ def print_agent_action(
     print(f"└{'─' * width}┘{RESET}")
 
 
-def print_vote_tally(votes: dict[str, str], result: str | None) -> None:
-    counts: dict[str, int] = {}
-    for target in votes.values():
-        counts[target] = counts.get(target, 0) + 1
+def print_vote_tally(
+    votes: dict[str, str],
+    result: str | None,
+    *,
+    weighted_counts: dict[str, float] | None = None,
+    warnings: list[str] | None = None,
+) -> None:
+    counts = dict(weighted_counts or {})
+    if not counts:
+        for target in votes.values():
+            counts[target] = counts.get(target, 0.0) + 1.0
 
     print(f"\n{BOLD}---- Vote Tally ----{RESET}")
-    for voter, target in sorted(votes.items()):
-        print(f"  {voter:10} -> {target}")
+    if votes:
+        for voter, target in sorted(votes.items()):
+            print(f"  {voter:10} -> {target}")
+    else:
+        print("  [no votes recorded]")
 
     print(f"\n{BOLD}---- Counts ----{RESET}")
-    for name, count in sorted(counts.items(), key=lambda x: -x[1]):
-        bar = "█" * count
-        print(f"  {name:10} {bar} ({count})")
+    if counts:
+        for name, count in sorted(counts.items(), key=lambda x: -x[1]):
+            bar = "█" * max(1, int(round(count)))
+            count_label = str(int(count)) if float(count).is_integer() else f"{count:.1f}"
+            print(f"  {name:10} {bar} ({count_label})")
+    else:
+        print("  [no counts recorded]")
+
+    if warnings:
+        print(f"\n{YELLOW}{BOLD}---- Vote Warnings ----{RESET}")
+        for warning in warnings:
+            print(f"  - {warning}")
 
     if result:
         print(f"\n{RED}{BOLD}>>> ELIMINATED: {result} <<<{RESET}")

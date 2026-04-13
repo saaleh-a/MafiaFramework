@@ -1,5 +1,6 @@
 """Shared utilities for all game agents."""
 
+import hashlib
 import re
 import sys
 import logging
@@ -95,18 +96,26 @@ def format_vote_prompt(
     targets: list[str],
     *,
     private_context: str = "",
+    coordination_note: str = "",
 ) -> str:
     """Build a stricter day-vote prompt that strongly prefers exact output."""
     discussion_text = "\n".join(history) if history else "No prior discussion."
     private_block = f"{private_context.strip()}\n\n" if private_context.strip() else ""
+    coordination_block = (
+        f"{coordination_note.strip()}\n\n" if coordination_note.strip() else ""
+    )
     return (
         f"{public_state_summary}\n\n"
         f"{private_block}"
+        f"{coordination_block}"
         f"Full discussion:\n{discussion_text}\n\n"
         f"DAY VOTE. You are {agent_name}. You CANNOT vote for yourself.\n"
-        f"Valid targets: {', '.join(targets)}\n"
+        f"Allowed targets this vote: {', '.join(targets)}\n"
         "This is the vote phase, not discussion. Make one final elimination choice now.\n"
         "Do NOT continue the discussion. Do NOT ask questions.\n"
+        "Your vote MUST follow your current belief state. Pick the allowed target you currently suspect most.\n"
+        "If you override your own top belief, explain it in REASONING with a line starting 'OVERRIDE:'.\n"
+        "Include one compact reasoning line: 'VOTE_DECISION: target=<name> basis=<belief|consensus|override>'.\n"
         "Preferred: call the cast_vote tool with target=<exact valid name>.\n"
         "If you do not use the tool, your FINAL line MUST be exactly:\n"
         "ACTION: VOTE: <exact name from valid targets>\n"
@@ -266,6 +275,40 @@ def _append_unique_segment(segments: list[str], value: str) -> None:
         segments.append(cleaned)
 
 
+def _stable_text_hash(text: str) -> str:
+    """Hash text after whitespace normalization."""
+    normalized = " ".join(text.split())
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+
+def _collapse_repeated_passage(text: str, *, min_words: int = 6) -> str:
+    """
+    Collapse obvious contiguous duplicate passages caused by streaming retries
+    or duplicate rebuild output.
+    """
+    normalized = " ".join(text.split())
+    if not normalized:
+        return normalized
+
+    words = normalized.split()
+    changed = True
+    while changed:
+        changed = False
+        word_count = len(words)
+        for size in range(word_count // 2, min_words - 1, -1):
+            matched = False
+            for start in range(0, word_count - (2 * size) + 1):
+                if words[start:start + size] != words[start + size:start + (2 * size)]:
+                    continue
+                words = words[:start + size] + words[start + (2 * size):]
+                changed = True
+                matched = True
+                break
+            if matched:
+                break
+    return " ".join(words)
+
+
 def _extract_structured_tool_content(content) -> str | None:
     """Recover vote/target outputs from structured tool call/result content."""
     tool_name = (getattr(content, "name", None) or getattr(content, "tool_name", None) or "").strip()
@@ -332,7 +375,7 @@ def _serialize_agent_response(response) -> str:
                 if isinstance(text, str):
                     _append_unique_segment(segments, text)
 
-    return "\n".join(segments)
+    return _collapse_repeated_passage("\n".join(segments))
 
 
 async def run_agent_stream(
@@ -394,10 +437,19 @@ async def run_agent_stream(
     async def _do_stream_call() -> str:
         """Single streaming API call — returns the concatenated text."""
         chunks: list[str] = []
+        seen_hashes: set[str] = set()
         async for chunk in agent.run(prompt, stream=True, session=session):
             if chunk.text:
+                chunk_hash = _stable_text_hash(chunk.text)
+                if chunk_hash in seen_hashes:
+                    logger.info(
+                        "[%s] Skipping duplicate streaming chunk during rebuild",
+                        player_name,
+                    )
+                    continue
+                seen_hashes.add(chunk_hash)
                 chunks.append(chunk.text)
-        return "".join(chunks)
+        return _collapse_repeated_passage("".join(chunks))
 
     async def _do_non_stream_call() -> str:
         """Non-streaming fallback — returns the response text."""
@@ -410,8 +462,12 @@ async def run_agent_stream(
         tool_result = _extract_tool_result(full_text)
         if tool_result:
             reasoning, _ = parse_reasoning_action(full_text)
-            return reasoning, tool_result
-        return parse_reasoning_action(full_text)
+            return (
+                _collapse_repeated_passage(reasoning),
+                _collapse_repeated_passage(tool_result),
+            )
+        reasoning, action = parse_reasoning_action(full_text)
+        return _collapse_repeated_passage(reasoning), _collapse_repeated_passage(action)
 
     async def _try_non_stream_recovery(
         reason: str,

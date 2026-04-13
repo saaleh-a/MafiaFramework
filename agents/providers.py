@@ -37,6 +37,10 @@ class BeliefStateProvider(ContextProvider):
         all_beliefs:    dict[str, SuspicionState] (for Iroh Protocol)
         role:           str role name
         name:           str player name
+        phase_value:    str phase label
+        vote_shortlist: list[str] current coordination shortlist
+        recommended_vote: str recommended target for this voter
+        evasion_scores: dict[str, int] current room evasion scores
     """
 
     DEFAULT_SOURCE_ID = "belief"
@@ -66,6 +70,12 @@ class BeliefStateProvider(ContextProvider):
         # Core belief injection
         belief_text = build_belief_prompt_injection(suspicion, archetype)
         context.extend_instructions(self.source_id, belief_text)
+
+        context.extend_instructions(
+            self.source_id,
+            "ARCHETYPE OVERRIDE: your archetype controls tone and bias, not the win condition. "
+            "If the board offers a clearer solve or survival move, take it.",
+        )
 
         # Vote format reinforcement: if previous vote was unparseable,
         # inject a stronger format requirement
@@ -98,6 +108,41 @@ class BeliefStateProvider(ContextProvider):
         role: str = state.get("role", "")
         name: str = state.get("name", "")
         all_beliefs: dict[str, SuspicionState] | None = state.get("all_beliefs")
+        if all_beliefs and role != "Narrator":
+            avg_suspicion = suspicion._get_avg_suspicion(name, all_beliefs)
+            if avg_suspicion is not None and avg_suspicion >= 0.40:
+                context.extend_instructions(
+                    self.source_id,
+                    "SURVIVAL OVERRIDE: you are under real pressure. Drop the pose if needed. "
+                    "Use exact names, exact moves, and the strongest current case.",
+                )
+
+        phase_value: str = state.get("phase_value", "")
+        vote_shortlist: list[str] = list(state.get("vote_shortlist", []) or [])
+        recommended_vote: str = state.get("recommended_vote", "")
+        evasion_scores: dict[str, int] = dict(state.get("evasion_scores", {}) or {})
+        detective_vote_weight: int = int(state.get("detective_vote_weight", 1) or 1)
+        if phase_value == "DAY VOTE" and vote_shortlist:
+            evasion_text = ", ".join(
+                f"{player}:{score}" for player, score in sorted(
+                    evasion_scores.items(), key=lambda item: (-item[1], item[0]),
+                ) if score > 0
+            ) or "none"
+            vote_note = (
+                "VOTE COORDINATION:\n"
+                f"Current shortlist: {', '.join(vote_shortlist)}.\n"
+                f"Recommended vote from your current belief state: {recommended_vote or 'none'}.\n"
+                f"Current evasion scores: {evasion_text}.\n"
+                "Vote from the shortlist unless you have a real override.\n"
+                "If you override, justify it explicitly with 'OVERRIDE:' in REASONING."
+            )
+            if role == "Detective":
+                vote_note += (
+                    f"\nYour vote weight is {detective_vote_weight}. If you have a real result, "
+                    "use that weight to force consolidation."
+                )
+            context.extend_instructions(self.source_id, vote_note)
+
         if role in ("Detective", "Doctor") and all_beliefs:
             # Check if Detective has a red check (confirmed Mafia finding)
             has_red_check = False
