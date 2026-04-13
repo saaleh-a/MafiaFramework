@@ -778,7 +778,7 @@ class [Role]Agent:
 | Variable                           | Default | Max  | Purpose                           |
 |------------------------------------|---------|------|-----------------------------------|
 | `FOUNDRY_PROJECT_ENDPOINT`         | (req.)  | —    | Azure AI Foundry endpoint         |
-| `FOUNDRY_MODEL`                    | gpt-5.4-mini | — | Model deployment name            |
+| `FOUNDRY_MODEL`                    | gpt-4o-mini | — | Model deployment name            |
 | `MAFIA_MAX_CONCURRENT_CALLS`       | 5       | 10   | Global semaphore limit            |
 | `MAFIA_RATE_LIMIT_RETRIES`         | 3       | 5    | 429 retry attempts                |
 | `MAFIA_BACKOFF_BASE_DELAY`         | 1.0     | —    | Exponential backoff base (sec)    |
