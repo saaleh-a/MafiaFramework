@@ -214,13 +214,14 @@ class TestPersonalityExclusion(unittest.TestCase):
         p = _pick_personality_constrained("Villager", counts, demo=False)
         self.assertNotEqual(p, "TheGhost")
 
-    def test_raises_when_no_valid_personality(self):
-        """ValueError when all personalities are exhausted."""
+    def test_cap_relaxation_when_all_at_cap(self):
+        """Cap relaxation allows a pick when all personalities are at cap."""
         from prompts.personalities import ALL_PERSONALITIES
         # Saturate every personality at the cap
         counts = {p: _PERSONALITY_FREQUENCY_CAP for p in ALL_PERSONALITIES}
-        with self.assertRaises(ValueError):
-            _pick_personality_constrained("Villager", counts, demo=False)
+        # Should NOT raise — the fallback relaxes caps but keeps exclusions
+        p = _pick_personality_constrained("Villager", counts, demo=False)
+        self.assertIn(p, ALL_PERSONALITIES)
 
 
 # ===========================================================================
@@ -3539,29 +3540,30 @@ class TestPersonalityConstrainedFrequencyCap(unittest.TestCase):
                 p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
                 self.assertNotEqual(p, cp)
 
-    def test_raises_on_empty_pool(self):
-        """If all personalities are excluded, ValueError is raised."""
+    def test_cap_relaxation_on_full_pool(self):
+        """Cap relaxation returns a personality when all are over cap."""
         from prompts.personalities import ALL_PERSONALITIES
-        # Cap everything at 0 effectively by filling counts above cap
         counts = {p: 10 for p in ALL_PERSONALITIES}
-        with self.assertRaises(ValueError):
-            _pick_personality_constrained("Villager", counts, archetype="Analytical")
+        # Should NOT raise — caps are relaxed, hard exclusions preserved
+        p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
+        self.assertIn(p, ALL_PERSONALITIES)
 
 
 class TestGameManagerPlayerNames(unittest.TestCase):
     """Verify player name list consistency."""
 
     def test_eleven_players(self):
-        from engine.game_manager import PLAYER_NAMES, ROLE_DISTRIBUTION
+        from engine.game_manager import PLAYER_NAMES, _build_role_distribution
         self.assertEqual(len(PLAYER_NAMES), 11)
-        self.assertEqual(len(ROLE_DISTRIBUTION), 11)
+        self.assertEqual(len(_build_role_distribution(len(PLAYER_NAMES))), 11)
 
     def test_role_distribution(self):
-        from engine.game_manager import ROLE_DISTRIBUTION
-        self.assertEqual(ROLE_DISTRIBUTION.count("Mafia"), 2)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Detective"), 1)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Doctor"), 1)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Villager"), 7)
+        from engine.game_manager import PLAYER_NAMES, _build_role_distribution
+        roles = _build_role_distribution(len(PLAYER_NAMES))
+        self.assertEqual(roles.count("Mafia"), 2)
+        self.assertEqual(roles.count("Detective"), 1)
+        self.assertEqual(roles.count("Doctor"), 1)
+        self.assertEqual(roles.count("Villager"), 7)
 
 
 # ===================================================================== #

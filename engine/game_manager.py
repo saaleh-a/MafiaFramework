@@ -167,10 +167,11 @@ def _pick_personality_constrained(
         )
     ]
 
-    if demo and not eligible:
-        # Demo / constrained pools can temporarily exhaust the frequency cap.
-        # In that case, preserve hard exclusions but relax the cap so game
-        # creation degrades gracefully instead of aborting.
+    if not eligible:
+        # With 11 players, 8 personalities, and archetype exclusions the
+        # frequency caps can be exhausted.  Preserve hard exclusions but
+        # relax the cap so game creation degrades gracefully instead of
+        # crashing.
         eligible = [p for p in pool if p not in excluded]
 
     if not eligible:
