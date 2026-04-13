@@ -7,7 +7,7 @@ replacing the deprecated AzureOpenAIResponsesClient from agent_framework.azure).
 
 Env vars follow MAF conventions:
   FOUNDRY_PROJECT_ENDPOINT  - https://<resource>.services.ai.azure.com
-  FOUNDRY_MODEL             - your deployment name (e.g. gpt-4o-mini)
+  FOUNDRY_MODEL             - your deployment name (e.g. gpt-5.4-mini)
 """
 
 import os
@@ -25,7 +25,7 @@ class ModelConfig:
 
 
 # Resolve deployment name from environment.
-_primary_model = os.environ.get("FOUNDRY_MODEL", "gpt-4o-mini")
+_primary_model = os.environ.get("FOUNDRY_MODEL", "gpt-5.4-mini")
 
 # Add/remove entries to match what you've actually deployed.
 # All must exist in your Foundry project.
@@ -34,14 +34,14 @@ _primary_model = os.environ.get("FOUNDRY_MODEL", "gpt-4o-mini")
 # assignment table never lies about which deployment is in use.
 def _display_name(model_id: str) -> str:
     """Derive a human-friendly display name from a deployment id."""
-    return model_id.upper()   # e.g. "gpt-4o-mini" → "GPT-4O-MINI"
+    return model_id.upper()   # e.g. "gpt-5.4-mini" → "GPT-5.4-MINI"
 
 
 AVAILABLE_MODELS: list[ModelConfig] = [
     ModelConfig(
         name=_display_name(_primary_model),
         model_id=_primary_model,
-        short="4om",
+        short="54m",
     ),
     ModelConfig(
         name=_display_name("grok-4-1-fast-reasoning"),
@@ -49,9 +49,9 @@ AVAILABLE_MODELS: list[ModelConfig] = [
         short="grk",
     ),
     ModelConfig(
-        name=_display_name("gpt-5.4-mini"),
-        model_id="gpt-5.4-mini",
-        short="54m",
+        name=_display_name("gpt-4o-mini"),
+        model_id="gpt-4o-mini",
+        short="4om",
     ),
     ModelConfig(
         name=_display_name("model-router"),
@@ -101,7 +101,7 @@ def validate_environment() -> list[str]:
     model = os.environ.get("FOUNDRY_MODEL")
     if not model:
         issues.append(
-            "FOUNDRY_MODEL is not set. Defaulting to 'gpt-4o-mini'. "
+            "FOUNDRY_MODEL is not set. Defaulting to 'gpt-5.4-mini'. "
             "Set it in .env to match your deployment name."
         )
 
