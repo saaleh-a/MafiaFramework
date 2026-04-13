@@ -43,10 +43,22 @@ AVAILABLE_MODELS: list[ModelConfig] = [
         model_id=_primary_model,
         short="4om",
     ),
+    ModelConfig(
+        name=_display_name("grok-4-1-fast-reasoning"),
+        model_id="grok-4-1-fast-reasoning",
+        short="grk",
+    ),
+    ModelConfig(
+        name=_display_name("gpt-5.4-mini"),
+        model_id="gpt-5.4-mini",
+        short="54m",
+    ),
+    ModelConfig(
+        name=_display_name("model-router"),
+        model_id="model-router",
+        short="rtr",
+    ),
 ]
-
-# Uncomment to add more deployments when available:
-# ModelConfig(name="GPT-4.1-mini", model_id="gpt-4.1-mini", short="41m"),
 
 
 def make_client(model: ModelConfig):
