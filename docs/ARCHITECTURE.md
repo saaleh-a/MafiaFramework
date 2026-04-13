@@ -124,7 +124,7 @@ MafiaFramework/
 │
 ├── tests/                           # Test suite
 │   ├── __init__.py
-│   └── test_refactor.py             # 332 tests, 84 classes (3,718 lines)
+│   └── test_refactor.py             # 329 tests, 84 classes (3,718 lines)
 │
 ├── docs/                            # Documentation
 │   ├── METHODOLOGY.md
@@ -796,7 +796,7 @@ class [Role]Agent:
 
 **File:** `tests/test_refactor.py`  
 **Lines:** 3,718  
-**Tests:** 332  
+**Tests:** 329  
 **Classes:** 84  
 
 All tests run without Azure credentials or model deployments:

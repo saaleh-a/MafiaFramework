@@ -11,7 +11,7 @@ Everything you need to go from zero to running your first MafiaFramework game �
 3. `python check.py` → should print "SETUP OK"
 4. `python main.py` → watch 11 AI agents play Mafia
 5. Use `--reveal-roles` to see who's who, `--debug` for full reasoning, `--games 10 --seed 42` for reproducible multi-game runs
-6. Tests: `python -m unittest tests.test_refactor -v` (332 tests, no Azure needed)
+6. Tests: `python -m unittest tests.test_refactor -v` (329 tests, no Azure needed)
 
 ---
 
@@ -362,7 +362,7 @@ python -m unittest tests.test_refactor -v
 ```
 
 **Test Suite Stats:**
-- **332 tests** across **84 test classes**
+- **329 tests** across **84 test classes**
 - **3,718 lines** of test code
 - **Zero** external dependencies (no Azure, no API calls)
 
