@@ -214,13 +214,14 @@ class TestPersonalityExclusion(unittest.TestCase):
         p = _pick_personality_constrained("Villager", counts, demo=False)
         self.assertNotEqual(p, "TheGhost")
 
-    def test_raises_when_no_valid_personality(self):
-        """ValueError when all personalities are exhausted."""
+    def test_cap_relaxation_when_exhausted(self):
+        """Cap relaxation allows a pick when all personalities are at cap."""
         from prompts.personalities import ALL_PERSONALITIES
         # Saturate every personality at the cap
         counts = {p: _PERSONALITY_FREQUENCY_CAP for p in ALL_PERSONALITIES}
-        with self.assertRaises(ValueError):
-            _pick_personality_constrained("Villager", counts, demo=False)
+        # Should NOT raise — the fallback relaxes caps but keeps exclusions
+        p = _pick_personality_constrained("Villager", counts, demo=False)
+        self.assertIn(p, ALL_PERSONALITIES)
 
 
 # ===========================================================================
@@ -2508,7 +2509,7 @@ class TestGameStateLogging(unittest.TestCase):
 
 
 # ===================================================================== #
-#  SuspicionState: belief tracking, staleness, Iroh Protocol            #
+#  SuspicionState: belief tracking, staleness, Last Stand Protocol     #
 # ===================================================================== #
 
 class TestSuspicionStateBasics(unittest.TestCase):
@@ -2618,8 +2619,8 @@ class TestSuspicionStateStaleness(unittest.TestCase):
         self.assertFalse(s.is_frustrated)
 
 
-class TestIrohProtocol(unittest.TestCase):
-    """Graduated Iroh Protocol reveal logic."""
+class TestLastStandProtocol(unittest.TestCase):
+    """Graduated Last Stand Protocol reveal logic."""
 
     def _make_beliefs(self, suspicion_of_target: float) -> dict[str, "SuspicionState"]:
         from agents.belief_state import SuspicionState
@@ -2638,33 +2639,33 @@ class TestIrohProtocol(unittest.TestCase):
         from agents.belief_state import SuspicionState
         beliefs = self._make_beliefs(0.2)
         target_belief = beliefs["Target"]
-        self.assertIsNone(target_belief.get_iroh_level("Target", beliefs))
+        self.assertIsNone(target_belief.get_last_stand_level("Target", beliefs))
 
     def test_soft_hint_at_035(self):
         beliefs = self._make_beliefs(0.36)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "soft_hint"
         )
 
     def test_hard_claim_at_045(self):
         beliefs = self._make_beliefs(0.46)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "hard_claim"
         )
 
     def test_full_reveal_at_055(self):
         beliefs = self._make_beliefs(0.56)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "full_reveal"
         )
 
     def test_red_check_lowers_thresholds(self):
         beliefs = self._make_beliefs(0.30)  # Below normal soft_hint (0.35)
         # With red-check adjustment (-0.10), threshold becomes 0.25
-        level = beliefs["Target"].get_iroh_level(
+        level = beliefs["Target"].get_last_stand_level(
             "Target", beliefs, has_red_check=True,
         )
         self.assertEqual(level, "soft_hint")
@@ -3539,29 +3540,30 @@ class TestPersonalityConstrainedFrequencyCap(unittest.TestCase):
                 p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
                 self.assertNotEqual(p, cp)
 
-    def test_raises_on_empty_pool(self):
-        """If all personalities are excluded, ValueError is raised."""
+    def test_cap_relaxation_with_archetype_when_exhausted(self):
+        """Cap relaxation returns a personality when all are over cap with archetype constraint."""
         from prompts.personalities import ALL_PERSONALITIES
-        # Cap everything at 0 effectively by filling counts above cap
         counts = {p: 10 for p in ALL_PERSONALITIES}
-        with self.assertRaises(ValueError):
-            _pick_personality_constrained("Villager", counts, archetype="Analytical")
+        # Should NOT raise — caps are relaxed, hard exclusions preserved
+        p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
+        self.assertIn(p, ALL_PERSONALITIES)
 
 
 class TestGameManagerPlayerNames(unittest.TestCase):
     """Verify player name list consistency."""
 
     def test_eleven_players(self):
-        from engine.game_manager import PLAYER_NAMES, ROLE_DISTRIBUTION
+        from engine.game_manager import PLAYER_NAMES, _build_role_distribution
         self.assertEqual(len(PLAYER_NAMES), 11)
-        self.assertEqual(len(ROLE_DISTRIBUTION), 11)
+        self.assertEqual(len(_build_role_distribution(len(PLAYER_NAMES))), 11)
 
     def test_role_distribution(self):
-        from engine.game_manager import ROLE_DISTRIBUTION
-        self.assertEqual(ROLE_DISTRIBUTION.count("Mafia"), 2)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Detective"), 1)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Doctor"), 1)
-        self.assertEqual(ROLE_DISTRIBUTION.count("Villager"), 7)
+        from engine.game_manager import PLAYER_NAMES, _build_role_distribution
+        roles = _build_role_distribution(len(PLAYER_NAMES))
+        self.assertEqual(roles.count("Mafia"), 2)
+        self.assertEqual(roles.count("Detective"), 1)
+        self.assertEqual(roles.count("Doctor"), 1)
+        self.assertEqual(roles.count("Villager"), 7)
 
 
 # ===================================================================== #

@@ -21,6 +21,7 @@ An AI-powered simulation of the social deduction game **Mafia**, built on the [M
 - [Configuration](#configuration)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
+- [Further Documentation](#further-documentation)
 
 ---
 
@@ -130,16 +131,17 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
 | `agents/belief_state.py`     | Suspicion tracking per agent, overconfidence gating, staleness detection, BeliefGraph scum-tell detection, temporal consistency checking. |
 | `agents/summary.py`          | SummaryAgent — generates low-cognitive-load narrative summaries with recency-weighted target identification. |
 | `agents/providers.py`        | MAF ContextProviders — `BeliefStateProvider` and `CrossGameMemoryProvider` inject dynamic context into each agent call. |
-| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` (slang enforcement), `ReasoningActionMiddleware` (REASONING/ACTION parsing), `BeliefUpdateMiddleware` (BELIEF_UPDATE extraction). |
+| `agents/middleware.py`       | MAF middleware — `corporate_speak_middleware` (slang enforcement), `ReasoningActionMiddleware` (REASONING/ACTION parsing), `BeliefUpdateMiddleware` (BELIEF_UPDATE extraction), `ResilientSessionMiddleware` (session expiration recovery), `RateLimitMiddleware` (429 backoff + proactive refresh). |
 | `agents/game_tools.py`       | MAF `@tool`-decorated functions — `cast_vote` and `choose_target` for structured game actions. |
+| `agents/rate_limiter.py`     | Global rate limiting — asyncio semaphore, exponential backoff with jitter, error classification (429 retry / 5xx fail fast). |
 | `agents/memory.py`           | Persistent cross-game memory — role-aware learnings stored as JSON, loaded each game.        |
 | `agents/narrator.py`         | Narrator agent — omniscient, impartial game master announcements.                            |
 | `agents/mafia.py`            | Mafia agent — day discussion, voting, night kill target, Syndicate coordination.             |
-| `agents/detective.py`        | Detective agent — day discussion, voting, night investigation, Iroh Protocol reveal.         |
+| `agents/detective.py`        | Detective agent — day discussion, voting, night investigation, Last Stand Protocol reveal.         |
 | `agents/doctor.py`           | Doctor agent — day discussion, voting, night protection, Value-Protection Heuristic.         |
 | `agents/villager.py`         | Villager agent — day discussion, voting, Voter Consistency tracking.                         |
 | `config/model_registry.py`   | Model pool definition and Azure Foundry client factory.                                      |
-| `config/settings.py`         | Loads environment variables for the Foundry endpoint and default model.                      |
+| `config/settings.py`         | Environment variable loader with rate-limiting, streaming, game-balance, and session-resilience configuration.                      |
 | `prompts/builder.py`         | Assembles system prompts from role goals, frameworks, archetype modifiers, personality blocks, and mandatory role-specific protocols. |
 | `prompts/frameworks.py`      | Reusable reasoning frameworks: game theory, Sun Tzu, Machiavelli, Carnegie, behavioural psych, strategic glossary, incentive reasoning, self-critique. |
 | `prompts/archetypes.py`      | 13 strategy archetypes, anti-AI-writing constraints, GenZ/MLE slang register, corporate-speak penalty, conversational rules. |
@@ -161,7 +163,8 @@ MafiaFramework/
 │   ├── belief_state.py         # Suspicion tracking, BeliefGraph, temporal checks
 │   ├── summary.py              # SummaryAgent — narrative summaries per phase
 │   ├── providers.py            # MAF ContextProviders (belief + memory injection)
-│   ├── middleware.py           # MAF middleware (corporate-speak, REASONING/ACTION parsing, belief updates)
+│   ├── middleware.py           # MAF middleware (corporate-speak, REASONING/ACTION parsing, belief updates, session resilience, rate limiting)
+│   ├── rate_limiter.py        # Global rate limiting with exponential backoff
 │   ├── game_tools.py           # @tool-decorated game actions (vote, target)
 │   ├── memory.py               # Cross-game persistent memory
 │   ├── narrator.py             # Narrator agent
@@ -187,7 +190,11 @@ MafiaFramework/
 │   └── personalities.py        # Performance personality definitions
 ├── tests/
 │   ├── __init__.py
-│   └── test_refactor.py        # 63 tests across 19 test classes
+│   └── test_refactor.py        # 329 tests across 84 test classes
+├── docs/
+│   ├── METHODOLOGY.md          # Design philosophy and decision rationale
+│   ├── ARCHITECTURE.md         # Complete technical reference
+│   └── ONBOARDING.md           # Setup guide and developer handbook
 └── memory/                     # Cross-game learnings (gitignored)
 ```
 
@@ -361,7 +368,7 @@ Agents accumulate learnings across games via `GameMemoryStore`. Role-aware insig
 ### Context Providers
 
 Two MAF-native `ContextProvider` classes inject dynamic per-turn context:
-- **BeliefStateProvider** — Injects suspicion state, frustration warnings, overconfidence gates, scum-tell flags, temporal slip alerts, and Iroh Protocol reveal instructions.
+- **BeliefStateProvider** — Injects suspicion state, frustration warnings, overconfidence gates, scum-tell flags, temporal slip alerts, and Last Stand Protocol reveal instructions.
 - **CrossGameMemoryProvider** — Injects relevant learnings from previous games.
 
 ### Tools and Middleware
@@ -375,13 +382,33 @@ Three middleware components run on every player agent:
 - **`ReasoningActionMiddleware`** — Parses the `REASONING:`/`ACTION:` split from every response and stores parsed values on `context.metadata` so the orchestrator can read them cleanly.
 - **`BeliefUpdateMiddleware`** — Extracts `BELIEF_UPDATE` tags from reasoning text and stores the parsed updates on `context.metadata` for automatic belief state application.
 
+Two additional resilience middleware wrap all others (registered first on every agent):
+- **`ResilientSessionMiddleware`** — Catches `previous_response_not_found` errors when Azure sessions expire, reconstructs conversation from `InMemoryHistoryProvider`, and retries on a fresh session.
+- **`RateLimitMiddleware`** — Intercepts 429 rate-limit errors with exponential backoff (1s → 2s → 4s → 8s + jitter, up to 3 retries). Proactively refreshes sessions that have been idle longer than `MAFIA_SESSION_IDLE_THRESHOLD` (default 20s).
+
 ### Multi-Turn Conversational Memory
 
 Each player agent includes an `InMemoryHistoryProvider` from the MAF framework. This gives agents genuine multi-turn memory — each agent remembers what it and others actually said in prior rounds as proper message objects rather than a concatenated string. This reduces reasoning drift and partner-confusion errors.
 
-### Iroh Protocol
+### Last Stand Protocol
 
-When other agents' collective suspicion of a Detective or Doctor exceeds the self-preservation threshold (0.45), the system instructs them to reveal their role to survive. A dead Detective/Doctor helps nobody.
+When other agents' collective suspicion of a Detective or Doctor rises, the system instructs them to reveal their role in graduated steps to survive. A dead Detective/Doctor helps nobody.
+
+Three levels trigger based on average suspicion from other agents:
+- **Soft Hint** (≥ 0.35) — Hint at having information without revealing role
+- **Hard Claim** (≥ 0.45) — Conditionally claim role: "I am the Detective. I will reveal if the vote redirects."
+- **Full Reveal** (≥ 0.55) — Immediately reveal role with all evidence
+
+If the Detective holds an unshared red check (confirmed Mafia finding), all thresholds are lowered by 0.10 because information preservation outweighs survival risk.
+
+### Graceful Degradation
+
+When API calls fail entirely, per-phase fallback methods in `engine/orchestrator.py` produce reasonable default behaviour:
+- **Discussion** — "I'll listen for now" (pass turn)
+- **Voting** — Vote for highest-suspicion target from belief state
+- **Mafia Night Kill** — Target lowest-suspicion Town player (biggest threat)
+- **Investigation** — Investigate most suspicious unchecked player
+- **Protection** — Self-protect if suspicion > 0.3, otherwise random ally
 
 ---
 
@@ -403,8 +430,8 @@ Agent prompts are assembled in `prompts/builder.py` from layered components:
    - **Incentive Reasoning** — Who benefits from each elimination?
 5. **Role-Specific Protocols** — Mandatory blocks that must not be removed:
    - **Mafia**: Deception Layer, Syndicate Channel (partner coordination), Mafia Threat Check (4 mandatory pre-reasoning questions + solo 5th question)
-   - **Detective**: Claim Protocol (mandatory red-check announcement), Iroh Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
-   - **Doctor**: Value-Protection Heuristic (protect the reasoner — evidence-based predictions, bandwagon resistance — not the loudest voice), Iroh Protocol
+   - **Detective**: Claim Protocol (mandatory red-check announcement), Last Stand Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
+   - **Doctor**: Value-Protection Heuristic (protect the reasoner — evidence-based predictions, bandwagon resistance — not the loudest voice), Last Stand Protocol
    - **Villager**: Voter Consistency (anti-Mafia-Steering tool — track vote blocs, last-moment switches, lone divergent votes)
    - **Detective**: Vote Pattern Analysis (lone divergent vote detection, voting bloc tracking, vote-vs-kill-target comparison)
    - **Narrator**: Night Anonymity Rule (no living player names during night)
@@ -492,6 +519,21 @@ Every agent prompt includes:
    |----------------------------|----------|----------------------------------------------------------------|
    | `FOUNDRY_PROJECT_ENDPOINT` | Yes      | Your Azure AI Foundry project endpoint URL                     |
    | `FOUNDRY_MODEL`            | No       | Model deployment name (defaults to `gpt-4o-mini`)              |
+
+   **Advanced configuration** (all optional, with sensible defaults):
+
+   | Variable                           | Default | Description                                                |
+   |------------------------------------|---------|----------------------------------------------------------------|
+   | `MAFIA_MAX_CONCURRENT_CALLS`       | 5       | Max simultaneous API calls (global semaphore, max 10)        |
+   | `MAFIA_RATE_LIMIT_RETRIES`         | 3       | Retry attempts on 429 rate-limit errors (max 5)              |
+   | `MAFIA_BACKOFF_BASE_DELAY`         | 1.0     | Base delay for exponential backoff (seconds)                 |
+   | `MAFIA_ENABLE_STREAMING_FALLBACK`  | false   | Retry streaming calls as non-streaming on error              |
+   | `MAFIA_DETECTIVE_VOTE_WEIGHT`      | 2       | Detective vote multiplier (max 5)                            |
+   | `MAFIA_VOTE_CONFIDENCE_THRESHOLD`  | 0.45    | Min belief certainty before engine overrides vote            |
+   | `MAFIA_CONSENSUS_SHORTLIST_SIZE`   | 3       | Size of the pressure wagon (max 5)                           |
+   | `MAFIA_EVASION_BONUS`              | 0.08    | Suspicion boost for evasive players                          |
+   | `MAFIA_SESSION_IDLE_THRESHOLD`     | 20.0    | Proactive session refresh after N seconds idle               |
+   | `MAFIA_SESSION_REFRESH_THRESHOLD`  | 25.0    | Force refresh after N seconds cumulative backoff             |
 
    > **Important:** The model names must exactly match deployed model names in your Azure AI Foundry project.
 
@@ -582,24 +624,22 @@ AVAILABLE_MODELS = [
 
 ### Player Names and Role Distribution
 
-Edit `engine/game_manager.py` to change player names or role counts:
+Edit `engine/game_manager.py` to change player names. Role distribution scales automatically with player count:
 
 ```python
 PLAYER_NAMES = [
     "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank",
     "Grace", "Hank", "Ivy", "Jack", "Kate",
 ]
-
-ROLE_DISTRIBUTION = [
-    "Mafia", "Mafia",
-    "Detective",
-    "Doctor",
-    "Villager", "Villager", "Villager", "Villager",
-    "Villager", "Villager", "Villager",
-]
 ```
 
-The number of player names must match the number of roles.
+Role distribution is computed by `_build_role_distribution()`:
+- ≤10 players: 2 Mafia
+- ≤15 players: 3 Mafia
+- 15+ players: 4 Mafia
+- Detective added if 5+ players
+- Doctor added if 6+ players
+- Remaining slots: Villagers
 
 ---
 
@@ -611,31 +651,25 @@ The test suite validates core game mechanics without requiring Azure credentials
 python -m unittest tests.test_refactor -v
 ```
 
-**63 tests** across **19 test classes**:
+**329 tests** across **84 test classes** covering:
 
-| Test Class                         | Tests | Coverage                                                              |
-|------------------------------------|-------|-----------------------------------------------------------------------|
-| `TestSelfVotePrevention`           | 7     | VOTE: tag, intent phrases, and last-mentioned-name self-votes blocked |
-| `TestTieBreakLogic`                | 5     | Tie detection, three-way tie, decisive voter filtering                |
-| `TestPersonalityExclusion`         | 5     | Role–personality exclusions, frequency cap, exhaustion error          |
-| `TestActionSplitting`              | 5     | REASONING/ACTION splitting, embedded marker stripping                 |
-| `TestGhostFiltering`              | 4     | Eliminated round tracking, public summary role hiding                 |
-| `TestArchetypePersonalityExclusion`| 7     | All banned combinations enforced incl. Reactive+VibesVoter, non-excluded archetype allows all |
-| `TestReasoningOnlyParser`          | 4     | REASONING-only returns empty action, plain text still works           |
-| `TestRecencyWeighting`             | 3     | Current round outweighs old, previous round 0.3 weight               |
-| `TestMafiaPromptQuestions`         | 2     | Threat Check questions present, solo question references partner      |
-| `TestBeliefInstructionUpdate`      | 2     | "MAY" not "MUST" for BELIEF_UPDATE, archetype texture mentioned       |
-| `TestMafiaPartnerConfusionFix`     | 2     | Q3 excludes partner by name, asks only about Town players             |
-| `TestDoctorHeuristic`              | 3     | Protection signals present, danger signals present, no "SOCIAL ENGINE" language |
-| `TestStrongerRecencyDecay`         | 1     | 10 mentions from 2 rounds ago don't beat 1 current mention            |
-| `TestMiddlewareRegistration`       | 3     | ReasoningActionMiddleware and BeliefUpdateMiddleware exist and subclass AgentMiddleware |
-| `TestConsensusPersonalityCap`      | 5     | Consensus personalities capped at 1, non-consensus still at 2         |
-| `TestManipulativePerformerBan`     | 1     | Manipulative+ThePerformer banned                                      |
-| `TestLoneDivergentVoteInstruction` | 2     | Lone divergent vote instruction in Villager and Detective prompts     |
-| `TestIndependentArchetypeFloor`    | 2     | Independent archetypes and consensus personalities defined correctly   |
-| `TestInMemoryHistoryProvider`      | 1     | InMemoryHistoryProvider importable and instantiable                    |
-| `TestAllCombinationBans`           | 3     | Tier 1/2/3 bans present in exclusion tables, Tier 2 role specificity  |
-| `TestDiplomaticParasiteTier2`      | 4     | Diplomatic+TheParasite blocked for Detective/Doctor/Mafia, allowed for Villager |
+| Category                          | Classes | Tests | Coverage                                                              |
+|-----------------------------------|---------|-------|-----------------------------------------------------------------------|
+| Vote parsing & tie-break          | 3       | 16    | Self-vote prevention, intent phrases, tie detection, decisive vote    |
+| Personality constraints           | 7       | 24    | All 3 ban tiers, frequency caps, cap relaxation, Tier 2 role bans    |
+| Action parsing                    | 4       | 16    | REASONING/ACTION split, tool trace normalisation, recovery            |
+| Belief state & Last Stand         | 7       | 35    | Suspicion tracking, staleness, Last Stand Protocol, overconfidence    |
+| Session resilience                | 8       | 30    | Session recovery, rate limiting, health monitoring, refresh registry  |
+| Game state                        | 7       | 40    | Win conditions, elimination, night actions, voting, summaries         |
+| Prompt structure                  | 5       | 18    | Discussion rules, voice markers, slang register, vote ban reminder    |
+| Memory                            | 1       | 5     | GameMemoryStore load/save/inject                                      |
+| Summary agent                     | 6       | 20    | Recency weighting, compression, evidence extraction, vote summary     |
+| Rate limiter                      | 3       | 12    | Error classification, backoff calculation, retry stats                |
+| Game manager                      | 5       | 18    | Archetype/personality assignment, player names, constraint enforcement |
+| Settings & config                 | 2       | 8     | Environment variable parsing, configuration validation                |
+| MAF API compliance                | 4       | 11    | Import paths, dependency versions, provider signatures                |
+| Middleware                        | 2       | 8     | Registration, class hierarchy, narrator configuration                 |
+| Other                             | 20      | 68    | Discussion format, console setup, conversation continuity, etc.       |
 
 ---
 
@@ -681,3 +715,15 @@ az account show
 **Cause:** The model responded but produced unexpected text, or the model deployment is misconfigured.
 
 **Fix:** Verify that the model deployment in your Foundry project is operational, and that `FOUNDRY_MODEL` in `.env` matches the deployment name exactly.
+
+---
+
+## Further Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** | Design philosophy, belief state architecture, prompt engineering methodology, combination ban rationale, anti-AI writing enforcement, error recovery philosophy |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Complete technical reference — every module, data flow, middleware stack, context provider architecture, concurrency model, state management |
+| **[docs/ONBOARDING.md](docs/ONBOARDING.md)** | Step-by-step setup guide, CLI reference, output format guide, customisation guide, debugging tips, FAQ, glossary |
+
+Each document includes **TL;DR** and **ELI5** sections at the top.

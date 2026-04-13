@@ -154,7 +154,7 @@ class MafiaGameOrchestrator:
             belief_state["evasion_scores"] = dict(self._belief_graph.evasion_scores)
             belief_state["detective_vote_weight"] = MAFIA_DETECTIVE_VOTE_WEIGHT
 
-            # Pass detective findings for Iroh Protocol red-check detection
+            # Pass detective findings for Last Stand Protocol red-check detection
             if agent.role == "Detective" and hasattr(agent, "findings"):
                 belief_state["findings"] = agent.findings
             else:

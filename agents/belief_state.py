@@ -28,18 +28,18 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-# Default threshold for Iroh Protocol: if a Detective/Doctor's perceived
+# Default threshold for Last Stand Protocol: if a Detective/Doctor's perceived
 # suspicion exceeds this, they should reveal their identity to survive.
 SELF_PRESERVATION_THRESHOLD = 0.45
 
-# Graduated Iroh Protocol thresholds
-IROH_SOFT_HINT_THRESHOLD = 0.35     # Soft reveal hint
-IROH_HARD_CLAIM_THRESHOLD = 0.45    # Hard role claim with conditional
-IROH_FULL_REVEAL_THRESHOLD = 0.55   # Immediate full reveal
+# Graduated Last Stand Protocol thresholds
+LAST_STAND_SOFT_HINT_THRESHOLD = 0.35     # Soft reveal hint
+LAST_STAND_HARD_CLAIM_THRESHOLD = 0.45    # Hard role claim with conditional
+LAST_STAND_FULL_REVEAL_THRESHOLD = 0.55   # Immediate full reveal
 
 # Red-check adjustment: if Detective holds confirmed Mafia finding,
 # lower all thresholds by this amount (information > survival)
-IROH_RED_CHECK_ADJUSTMENT = 0.10
+LAST_STAND_RED_CHECK_ADJUSTMENT = 0.10
 
 # Archetype modulation thresholds for belief updates
 STRONG_EVIDENCE_THRESHOLD = 0.15    # Overconfident/Stubborn: require strong evidence
@@ -134,8 +134,8 @@ class SuspicionState:
 
     def should_reveal_identity(self, own_name: str, all_beliefs: dict[str, "SuspicionState"]) -> bool:
         """
-        Iroh Protocol: return True if enough other agents suspect *own_name*
-        above self_preservation_threshold.
+        Last Stand Protocol: return True if enough other agents suspect
+        *own_name* above self_preservation_threshold.
 
         We check every OTHER agent's belief about us. If the average
         suspicion across all agents who track us exceeds the threshold,
@@ -146,12 +146,12 @@ class SuspicionState:
             return False
         return avg >= self.self_preservation_threshold
 
-    def get_iroh_level(
+    def get_last_stand_level(
         self, own_name: str, all_beliefs: dict[str, "SuspicionState"],
         *, has_red_check: bool = False,
     ) -> str | None:
         """
-        Graduated Iroh Protocol: return the appropriate reveal level.
+        Graduated Last Stand Protocol: return the appropriate reveal level.
 
         Returns one of:
           - "soft_hint"   (threshold 0.35): hint at having information
@@ -166,13 +166,13 @@ class SuspicionState:
         if avg is None:
             return None
 
-        adjustment = IROH_RED_CHECK_ADJUSTMENT if has_red_check else 0.0
+        adjustment = LAST_STAND_RED_CHECK_ADJUSTMENT if has_red_check else 0.0
 
-        if avg >= IROH_FULL_REVEAL_THRESHOLD - adjustment:
+        if avg >= LAST_STAND_FULL_REVEAL_THRESHOLD - adjustment:
             return "full_reveal"
-        if avg >= IROH_HARD_CLAIM_THRESHOLD - adjustment:
+        if avg >= LAST_STAND_HARD_CLAIM_THRESHOLD - adjustment:
             return "hard_claim"
-        if avg >= IROH_SOFT_HINT_THRESHOLD - adjustment:
+        if avg >= LAST_STAND_SOFT_HINT_THRESHOLD - adjustment:
             return "soft_hint"
         return None
 
