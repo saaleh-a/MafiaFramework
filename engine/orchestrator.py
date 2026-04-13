@@ -43,7 +43,13 @@ from agents.belief_state import (
 from agents.providers import BeliefStateProvider, CrossGameMemoryProvider
 from agents.summary   import SummaryAgent
 from agents.memory    import GameMemoryStore
-from config.settings  import MAFIA_MAX_CONCURRENT_CALLS
+from config.settings  import (
+    MAFIA_CONSENSUS_SHORTLIST_SIZE,
+    MAFIA_DETECTIVE_VOTE_WEIGHT,
+    MAFIA_EVASION_BONUS,
+    MAFIA_MAX_CONCURRENT_CALLS,
+    MAFIA_VOTE_CONFIDENCE_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +89,16 @@ class MafiaGameOrchestrator:
 
         # Suspicion State: each agent tracks suspicion levels (structured intuition)
         player_names = list(game_state.players.keys())
+        total_mafia = sum(
+            1 for player in game_state.players.values() if player.role == "Mafia"
+        )
         self._beliefs: dict[str, SuspicionState] = {}
         for name in player_names:
             belief = SuspicionState()
             # Exclude self from suspicion tracking
             others = [n for n in player_names if n != name]
-            belief.initialize(others, num_mafia=2)
+            known_mafia = 1 if game_state.players[name].role == "Mafia" else 0
+            belief.initialize(others, num_mafia=max(1, total_mafia - known_mafia))
             self._beliefs[name] = belief
 
         # Summary: generates low-cognitive-load narrative each phase
@@ -102,6 +112,9 @@ class MafiaGameOrchestrator:
 
         # Track vote parse failures per agent for format reinforcement
         self._vote_parse_failures: dict[str, int] = {}
+        self._current_vote_shortlist: list[str] = []
+        self._current_vote_recommendations: dict[str, str] = {}
+        self._last_vote_warnings: list[str] = []
 
         # Phase-tier semaphore: limits concurrency within a single phase.
         # Minimum of 2 concurrent slots ensures progress even under
@@ -135,6 +148,11 @@ class MafiaGameOrchestrator:
             belief_state["all_beliefs"] = self._beliefs
             belief_state["role"] = agent.role
             belief_state["name"] = name
+            belief_state["phase_value"] = self.gs.phase.value
+            belief_state["vote_shortlist"] = list(self._current_vote_shortlist)
+            belief_state["recommended_vote"] = self._current_vote_recommendations.get(name, "")
+            belief_state["evasion_scores"] = dict(self._belief_graph.evasion_scores)
+            belief_state["detective_vote_weight"] = MAFIA_DETECTIVE_VOTE_WEIGHT
 
             # Pass detective findings for Iroh Protocol red-check detection
             if agent.role == "Detective" and hasattr(agent, "findings"):
@@ -151,6 +169,229 @@ class MafiaGameOrchestrator:
             mem_state["store"] = self._memory
             mem_state["role"] = agent.role
 
+        self.gs.evasion_scores = dict(self._belief_graph.evasion_scores)
+
+    def _compute_room_suspicion(
+        self,
+        candidates: list[str],
+    ) -> dict[str, float]:
+        """Aggregate room suspicion into a shortlist-friendly score."""
+        alive = set(self.gs.get_alive_players())
+        scores: dict[str, float] = {}
+        for target in candidates:
+            if target not in alive:
+                continue
+            weighted_total = 0.0
+            total_weight = 0.0
+            for source_name, belief in self._beliefs.items():
+                if source_name not in alive or source_name == target:
+                    continue
+                suspicion = belief.probabilities.get(target)
+                if suspicion is None:
+                    continue
+                weight = float(self.gs.get_vote_weight(source_name))
+                weighted_total += suspicion * weight
+                total_weight += weight
+
+            score = weighted_total / total_weight if total_weight else 0.0
+            score += self._belief_graph.evasion_scores.get(target, 0) * MAFIA_EVASION_BONUS
+            if (
+                self.detective.name in alive
+                and self.detective.findings.get(target) == "Mafia"
+            ):
+                score += 0.35
+            scores[target] = score
+        return scores
+
+    def _build_vote_shortlist(
+        self,
+        alive: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+    ) -> list[str]:
+        """Return the highest-pressure wagon shortlist for the current vote."""
+        candidate_pool = list(allowed_targets or alive)
+        candidate_pool = [target for target in candidate_pool if target in alive]
+        if not candidate_pool:
+            return []
+
+        room_scores = self._compute_room_suspicion(candidate_pool)
+        ranked = sorted(
+            candidate_pool,
+            key=lambda target: (
+                -room_scores.get(target, 0.0),
+                -self._belief_graph.evasion_scores.get(target, 0),
+                target,
+            ),
+        )
+        limit = min(MAFIA_CONSENSUS_SHORTLIST_SIZE, len(ranked))
+        return ranked[:limit]
+
+    def _recommend_vote_target(
+        self,
+        voter: str,
+        candidates: list[str],
+    ) -> tuple[str | None, float, str]:
+        """Recommend a vote target anchored to beliefs plus coordination."""
+        legal = [target for target in candidates if target != voter]
+        if not legal:
+            return None, 0.0, "belief"
+
+        player = self.gs.players.get(voter)
+        if not player:
+            return legal[0], 0.0, "belief"
+
+        if player.role == "Mafia":
+            partners = {
+                ally.name for ally in self.mafia if ally.name != voter and ally.name in legal
+            }
+            town_legal = [target for target in legal if target not in partners]
+            if town_legal:
+                legal = town_legal
+            room_scores = self._compute_room_suspicion(legal)
+            ranked = sorted(
+                legal,
+                key=lambda target: (
+                    -room_scores.get(target, 0.0),
+                    -self._belief_graph.evasion_scores.get(target, 0),
+                    target,
+                ),
+            )
+            top = ranked[0]
+            return top, room_scores.get(top, 0.0), "consensus"
+
+        if player.role == "Detective":
+            red_checks = [
+                target for target in legal
+                if self.detective.findings.get(target) == "Mafia"
+            ]
+            if red_checks:
+                return red_checks[0], 1.0, "belief"
+
+        belief = self._beliefs.get(voter)
+        scored: list[tuple[str, float]] = []
+        for target in legal:
+            score = belief.probabilities.get(target, 0.0) if belief else 0.0
+            score += self._belief_graph.evasion_scores.get(target, 0) * MAFIA_EVASION_BONUS
+            if player.role == "Detective" and self.detective.findings.get(target) == "Innocent":
+                score -= 0.25
+            scored.append((target, score))
+
+        scored.sort(key=lambda item: (-item[1], item[0]))
+        top_target, top_score = scored[0]
+        if top_score >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
+            return top_target, top_score, "belief"
+
+        consensus_scores = self._compute_room_suspicion(legal)
+        consensus_ranked = sorted(
+            legal,
+            key=lambda target: (
+                -consensus_scores.get(target, 0.0),
+                -self._belief_graph.evasion_scores.get(target, 0),
+                target,
+            ),
+        )
+        consensus_top = consensus_ranked[0]
+        return consensus_top, top_score, "consensus"
+
+    def _build_coordination_note(
+        self,
+        voter: str,
+        allowed_targets: list[str],
+        recommendation: str | None,
+        basis: str,
+        confidence: float,
+    ) -> str:
+        """Human-readable vote coordination note for the vote prompt."""
+        shortlist = [target for target in self._current_vote_shortlist if target in allowed_targets]
+        display_shortlist = shortlist or allowed_targets
+        note = [
+            "CONSENSUS TRACKING:",
+            f"Top pressure targets: {', '.join(display_shortlist)}.",
+            f"Recommended vote for you: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
+            "Pick from the shortlist unless you have a real reason to override it.",
+        ]
+        if self._belief_graph.evasion_scores:
+            evasion_text = ", ".join(
+                f"{player}:{score}"
+                for player, score in sorted(
+                    self._belief_graph.evasion_scores.items(),
+                    key=lambda item: (-item[1], item[0]),
+                )
+                if score > 0 and player in allowed_targets
+            )
+            if evasion_text:
+                note.append(f"Evasion pressure: {evasion_text}.")
+        if voter == self.detective.name and self.detective.findings:
+            note.append(
+                f"Your vote counts as {MAFIA_DETECTIVE_VOTE_WEIGHT}. Use confirmed information to force consolidation."
+            )
+        return "\n".join(note)
+
+    def _resolve_vote_target(
+        self,
+        voter: str,
+        parsed_target: str | None,
+        reasoning: str,
+        action: str,
+        allowed_targets: list[str],
+        recommended_target: str | None,
+        confidence: float,
+    ) -> tuple[str | None, str | None]:
+        """Resolve a final vote target and explain any engine-side override."""
+        legal = [target for target in allowed_targets if target != voter]
+        if not legal:
+            return None, "no legal targets available"
+
+        if parsed_target and parsed_target not in legal:
+            parsed_target = None
+
+        if parsed_target is None:
+            return recommended_target or legal[0], "vote was unparseable; used engine recommendation"
+
+        if not recommended_target:
+            return parsed_target, None
+
+        if parsed_target == recommended_target:
+            return parsed_target, None
+
+        override_text = f"{reasoning}\n{action}".lower()
+        if "override:" in override_text:
+            return parsed_target, None
+
+        if confidence >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
+            return (
+                recommended_target,
+                f"vote contradicted high-confidence belief state; forced to {recommended_target}",
+            )
+
+        return parsed_target, None
+
+    def _sync_vote_guidance(
+        self,
+        alive: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+    ) -> None:
+        """Refresh the current shortlist and per-agent vote recommendations."""
+        self._current_vote_shortlist = self._build_vote_shortlist(
+            alive, allowed_targets=allowed_targets,
+        )
+        recommendations: dict[str, str] = {}
+        for voter in alive:
+            legal = [
+                target for target in (
+                    self._current_vote_shortlist or allowed_targets or alive
+                )
+                if target != voter and target in alive
+            ]
+            if not legal:
+                legal = [target for target in alive if target != voter]
+            target, _, _ = self._recommend_vote_target(voter, legal)
+            recommendations[voter] = target or ""
+        self._current_vote_recommendations = recommendations
+        self._sync_provider_state()
+
     # ------------------------------------------------------------------ #
     #  Graceful degradation fallbacks                                      #
     # ------------------------------------------------------------------ #
@@ -160,18 +401,14 @@ class MafiaGameOrchestrator:
         logger.warning("[%s] Discussion call failed — player passes turn", name)
         return ("", "I'll listen for now.")
 
-    def _fallback_vote(self, name: str, alive: list[str]) -> tuple[str, str]:
+    def _fallback_vote(self, name: str, candidates: list[str]) -> tuple[str, str]:
         """Fallback when vote API call fails: vote using belief state."""
-        belief = self._beliefs.get(name)
-        eligible = [p for p in alive if p != name]
-        if belief and eligible:
-            # Vote for highest-suspicion player
-            scored = [(p, belief.probabilities.get(p, 0.0)) for p in eligible]
-            scored.sort(key=lambda x: -x[1])
-            target = scored[0][0]
+        eligible = [p for p in candidates if p != name]
+        target, _, basis = self._recommend_vote_target(name, eligible)
+        if target:
             logger.warning(
-                "[%s] Vote call failed — fallback to highest suspicion: %s",
-                name, target,
+                "[%s] Vote call failed — fallback to %s target: %s",
+                name, basis, target,
             )
             return ("", f"VOTE: {target}")
         if eligible:
@@ -350,6 +587,13 @@ class MafiaGameOrchestrator:
                 self._belief_graph.check_redirect(
                     name, action, current_target, alive,
                 )
+                self._belief_graph.check_evasion(
+                    name,
+                    action,
+                    discussion_history,
+                    alive,
+                )
+                self.gs.evasion_scores = dict(self._belief_graph.evasion_scores)
 
                 self.gs.log(name, agent.role, agent.archetype, reasoning, action)
                 self._print(name, agent.role, agent.archetype, reasoning, action,
@@ -364,8 +608,16 @@ class MafiaGameOrchestrator:
         print(narrative)
 
         await self._narrate("Announce voting time. Players must choose who to eliminate.")
+        self._sync_vote_guidance(alive)
+        if self._current_vote_shortlist:
+            discussion_history.append(
+                "[SYSTEM]: Consensus shortlist for this vote: "
+                + ", ".join(self._current_vote_shortlist)
+                + ". Consolidate unless you have a strong override."
+            )
 
-        await self._collect_votes(alive, discussion_history)
+        self.gs.votes = {}
+        vote_warnings = await self._collect_votes(alive, discussion_history)
 
         eliminated = self.gs.tally_votes()
         tied_players = self.gs.get_tied_players()
@@ -374,7 +626,12 @@ class MafiaGameOrchestrator:
         #  Tie-Break Protocol (two stages)
         # ----------------------------------------------------------------
         if not eliminated and tied_players:
-            print_vote_tally(self.gs.votes, None)
+            print_vote_tally(
+                self.gs.votes,
+                None,
+                weighted_counts=self.gs.get_weighted_vote_counts(),
+                warnings=vote_warnings,
+            )
             await self._narrate(
                 f"The vote is tied between {', '.join(tied_players)}! "
                 f"They will now state their defence before a decisive re-vote."
@@ -400,17 +657,107 @@ class MafiaGameOrchestrator:
             # Stage 2 — Decisive Vote: everyone *except* tied players
             print_phase_header("TIE-BREAK: DECISIVE VOTE", self.gs.round_number)
             self.gs.votes = {}  # reset for re-vote
-            decisive_voters = [p for p in alive if p not in tied_players]
-            await self._collect_votes(decisive_voters, discussion_history)
+            tie_note = (
+                "[SYSTEM]: Decisive revote. You must choose among tied players only: "
+                + ", ".join(tied_players)
+                + "."
+            )
+            discussion_history.append(tie_note)
+            self._sync_vote_guidance(alive, allowed_targets=tied_players)
+            vote_warnings = await self._collect_votes(
+                list(alive),
+                discussion_history,
+                allowed_targets=tied_players,
+                coordination_note=tie_note,
+            )
 
             eliminated = self.gs.tally_votes()
             tied_again = self.gs.get_tied_players()
 
-            # No-Kill Fallback: if a second tie occurs, no elimination
             if not eliminated and tied_again:
-                eliminated = None
+                evasion_ranked = sorted(
+                    tied_again,
+                    key=lambda player: (
+                        -self._belief_graph.evasion_scores.get(player, 0),
+                        player,
+                    ),
+                )
+                if len(evasion_ranked) >= 2 and (
+                    self._belief_graph.evasion_scores.get(evasion_ranked[0], 0)
+                    > self._belief_graph.evasion_scores.get(evasion_ranked[1], 0)
+                ):
+                    eliminated = evasion_ranked[0]
+                    vote_warnings.append(
+                        f"Second tie broken by evasion score: {eliminated} had the highest evasion."
+                    )
+                else:
+                    eliminated = None
 
-        print_vote_tally(self.gs.votes, eliminated)
+        if (
+            eliminated == self.detective.name
+            and self.detective.name in alive
+            and not self.detective.reveal_vote_used
+        ):
+            self.detective.reveal_vote_used = True
+            print_phase_header("DETECTIVE REVEAL WINDOW", self.gs.round_number)
+            reasoning, action = await self.detective.reveal_vote_window(
+                self.gs,
+                discussion_history,
+            )
+            self.gs.log(
+                self.detective.name,
+                self.detective.role,
+                self.detective.archetype,
+                reasoning,
+                action,
+            )
+            self._print(
+                self.detective.name,
+                self.detective.role,
+                self.detective.archetype,
+                reasoning,
+                action,
+                personality=self.detective.personality,
+            )
+            discussion_history.append(f"{self.detective.name} (REVEAL): {action}")
+            self.gs.votes = {}
+            reveal_targets = list(alive)
+            reveal_note = (
+                f"[SYSTEM]: {self.detective.name} used their reveal vote window. "
+                "Re-vote now with that information in mind."
+            )
+            discussion_history.append(reveal_note)
+            self._sync_vote_guidance(alive, allowed_targets=reveal_targets)
+            vote_warnings = await self._collect_votes(
+                alive,
+                discussion_history,
+                allowed_targets=reveal_targets,
+                coordination_note=reveal_note,
+            )
+            eliminated = self.gs.tally_votes()
+            tied_after_reveal = self.gs.get_tied_players()
+            if not eliminated and tied_after_reveal:
+                evasion_ranked = sorted(
+                    tied_after_reveal,
+                    key=lambda player: (
+                        -self._belief_graph.evasion_scores.get(player, 0),
+                        player,
+                    ),
+                )
+                if len(evasion_ranked) == 1 or (
+                    self._belief_graph.evasion_scores.get(evasion_ranked[0], 0)
+                    > self._belief_graph.evasion_scores.get(evasion_ranked[1], 0)
+                ):
+                    eliminated = evasion_ranked[0]
+                else:
+                    eliminated = None
+
+        print_vote_tally(
+            self.gs.votes,
+            eliminated,
+            weighted_counts=self.gs.get_weighted_vote_counts(),
+            warnings=vote_warnings,
+        )
 
         if eliminated:
             eliminated_role = self.gs.players[eliminated].role
@@ -423,23 +770,66 @@ class MafiaGameOrchestrator:
 
         # Reset per-round BeliefGraph tracking (keep cumulative flags)
         self._belief_graph.reset_round()
+        self._current_vote_shortlist = []
+        self._current_vote_recommendations = {}
 
     async def _collect_votes(
-        self, voters: list[str], discussion_history: list[str],
-    ) -> None:
+        self,
+        voters: list[str],
+        discussion_history: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+        coordination_note: str = "",
+    ) -> list[str]:
         """Run a vote round for *voters*, populating ``self.gs.votes``."""
         alive = self.gs.get_alive_players()
+        warnings: list[str] = []
+        if not voters:
+            warning = "Vote collection received zero eligible voters."
+            logger.error(warning)
+            warnings.append(warning)
+            self._last_vote_warnings = warnings
+            return warnings
+
+        if allowed_targets is not None:
+            target_pool = [target for target in allowed_targets if target in alive]
+        elif self._current_vote_shortlist:
+            target_pool = [target for target in self._current_vote_shortlist if target in alive]
+        else:
+            target_pool = list(alive)
+
         for name in voters:
-            if name not in self._agents:
+            if name not in self._agents or name not in alive:
                 continue
             agent = self._agents[name]
+            vote_targets = [target for target in target_pool if target != name]
+            if not vote_targets:
+                vote_targets = [target for target in alive if target != name]
+            recommended_target, confidence, basis = self._recommend_vote_target(
+                name,
+                vote_targets,
+            )
+            self._current_vote_recommendations[name] = recommended_target or ""
+            self._sync_provider_state()
+            per_agent_note = coordination_note or self._build_coordination_note(
+                name,
+                vote_targets,
+                recommended_target,
+                basis,
+                confidence,
+            )
+
             try:
-                reasoning, action = await agent.cast_vote(self.gs, discussion_history)
+                reasoning, action = await agent.cast_vote(
+                    self.gs,
+                    discussion_history,
+                    allowed_targets=vote_targets,
+                    coordination_note=per_agent_note,
+                )
             except Exception as exc:
                 logger.error("[%s] Vote call failed: %s", name, exc)
-                reasoning, action = self._fallback_vote(name, alive)
+                reasoning, action = self._fallback_vote(name, vote_targets)
 
-            # Parse belief updates from vote reasoning too
             belief = self._beliefs.get(name)
             if belief and reasoning:
                 updates = parse_belief_updates(reasoning)
@@ -449,58 +839,53 @@ class MafiaGameOrchestrator:
             self.gs.log(name, agent.role, agent.archetype, reasoning, action)
             self._print(name, agent.role, agent.archetype, reasoning, action,
                         personality=getattr(agent, 'personality', ''))
-            vote_target = self._parse_vote(action, alive, name)
+            vote_target = self._parse_vote(action, vote_targets, name)
             if vote_target is None and reasoning:
-                vote_target = self._parse_vote(reasoning, alive, name)
+                vote_target = self._parse_vote(reasoning, vote_targets, name)
             if vote_target is None:
-                # Track parse failure for format reinforcement next round
                 self._vote_parse_failures[name] = (
                     self._vote_parse_failures.get(name, 0) + 1
                 )
-                # Semantic extraction: use belief state to infer vote intent
-                belief = self._beliefs.get(name)
-                eligible = [p for p in alive if p != name]
-                if belief and eligible:
-                    scored = [
-                        (p, belief.probabilities.get(p, 0.0)) for p in eligible
-                    ]
-                    scored.sort(key=lambda x: -x[1])
-                    vote_target = scored[0][0]
-                    raw_source = action if action.strip() else reasoning
-                    raw_preview = raw_source[:200].replace("\n", " ")
-                    print(
-                        f"  [!] {name}'s vote was unparseable; "
-                        f"belief-state fallback -> {vote_target}\n"
-                        f"      Raw action text: \"{raw_preview}\"",
-                        file=sys.stderr,
-                    )
-                elif eligible:
-                    vote_target = random.choice(eligible)
-                    # Include raw text so failures are diagnosable
-                    raw_source = action if action.strip() else reasoning
-                    raw_preview = raw_source[:200].replace("\n", " ")
-                    print(
-                        f"  [!] {name}'s vote was unparseable; "
-                        f"random fallback -> {vote_target}\n"
-                        f"      Raw action text: \"{raw_preview}\"",
-                        file=sys.stderr,
-                    )
+
+            vote_target, resolution_warning = self._resolve_vote_target(
+                name,
+                vote_target,
+                reasoning or "",
+                action or "",
+                vote_targets,
+                recommended_target,
+                confidence,
+            )
+            if resolution_warning:
+                warnings.append(f"{name}: {resolution_warning}")
+                logger.warning("[%s] %s", name, resolution_warning)
+
             if vote_target:
                 self.gs.votes[name] = vote_target
 
-                # BeliefGraph: check for late bandwagon
                 self._belief_graph.check_late_bandwagon(
                     name, vote_target, reasoning or "",
                     self.gs.votes,
                 )
 
-                # BeliefGraph: check for instahammer
                 votes_before_current = len(self.gs.votes) - 1
                 self._belief_graph.check_instahammer(
                     name,
                     votes_before_current,
                     len(alive),
                 )
+            else:
+                warning = f"{name} produced no valid vote target."
+                warnings.append(warning)
+                logger.error(warning)
+
+        if not self.gs.votes:
+            warning = "Vote collection ended with zero recorded votes."
+            logger.error(warning)
+            warnings.append(warning)
+
+        self._last_vote_warnings = warnings
+        return warnings
 
     async def _run_night_phase(self) -> None:
         if self.gs.check_win_condition():
@@ -526,18 +911,17 @@ class MafiaGameOrchestrator:
         for mafia_agent in self.mafia:
             if mafia_agent.name not in alive_mafia:
                 continue
-            partner_hint = mafia_actions[-1] if mafia_actions else None
-
-            # Syndicate channel: find partner's previous night reasoning
-            partner_reasoning = None
-            for other in self.mafia:
-                if other.name != mafia_agent.name and other.last_night_reasoning:
-                    partner_reasoning = other.last_night_reasoning
-                    break
+            teammate_reasonings = [
+                (other.name, other.last_night_reasoning)
+                for other in self.mafia
+                if other.name != mafia_agent.name and other.last_night_reasoning
+            ]
 
             try:
                 reasoning, action = await mafia_agent.choose_night_kill(
-                    self.gs, partner_hint, partner_reasoning,
+                    self.gs,
+                    teammate_actions=mafia_actions,
+                    teammate_reasonings=teammate_reasonings,
                 )
             except Exception as exc:
                 logger.error("[%s] Night kill call failed: %s", mafia_agent.name, exc)

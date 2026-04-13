@@ -40,8 +40,15 @@ class VillagerAgent:
             self.session = new_session
         return reasoning, action
 
-    async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
-        targets = [p for p in game_state.get_alive_players() if p != self.name]
+    async def cast_vote(
+        self,
+        game_state: GameState,
+        history: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+        coordination_note: str = "",
+    ) -> tuple[str, str]:
+        targets = allowed_targets or [p for p in game_state.get_alive_players() if p != self.name]
         reasoning, action, new_session = await run_agent_stream(
             self.agent,
             format_vote_prompt(
@@ -49,6 +56,7 @@ class VillagerAgent:
                 history,
                 self.name,
                 targets,
+                coordination_note=coordination_note,
             ),
             session=self.session,
             prefer_non_stream=True,

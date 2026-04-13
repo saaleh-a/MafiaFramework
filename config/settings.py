@@ -47,6 +47,18 @@ MAFIA_ENABLE_STREAMING_FALLBACK: bool = (
     os.environ.get("MAFIA_ENABLE_STREAMING_FALLBACK", "").lower() in ("1", "true", "yes")
 )
 
+# Vote weight for the Detective. Gives confirmed information some steering power.
+MAFIA_DETECTIVE_VOTE_WEIGHT: int = _int_env("MAFIA_DETECTIVE_VOTE_WEIGHT", 2, 5)
+
+# Minimum certainty needed before a player is allowed to ignore their top read.
+MAFIA_VOTE_CONFIDENCE_THRESHOLD: float = _float_env("MAFIA_VOTE_CONFIDENCE_THRESHOLD", 0.45)
+
+# Size of the coordination shortlist shown before each day vote.
+MAFIA_CONSENSUS_SHORTLIST_SIZE: int = _int_env("MAFIA_CONSENSUS_SHORTLIST_SIZE", 3, 5)
+
+# Bonus applied to players who keep dodging direct questions.
+MAFIA_EVASION_BONUS: float = _float_env("MAFIA_EVASION_BONUS", 0.08)
+
 # ------------------------------------------------------------------ #
 #  Session resilience configuration                                    #
 # ------------------------------------------------------------------ #

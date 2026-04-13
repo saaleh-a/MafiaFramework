@@ -31,15 +31,26 @@ PLAYER_NAMES = [
     "Grace", "Hank", "Ivy", "Jack", "Kate",
 ]
 
-ROLE_DISTRIBUTION = [
-    "Mafia", "Mafia",
-    "Detective",
-    "Doctor",
-    "Villager", "Villager", "Villager", "Villager",
-    "Villager", "Villager", "Villager",
-]
+def _recommended_mafia_count(player_count: int) -> int:
+    """Return the balanced Mafia count for a given player count."""
+    if player_count <= 10:
+        return 2
+    if player_count <= 15:
+        return 3
+    return 4
 
-assert len(PLAYER_NAMES) == len(ROLE_DISTRIBUTION)
+
+def _build_role_distribution(player_count: int) -> list[str]:
+    """Build a role distribution from player count."""
+    mafia_count = _recommended_mafia_count(player_count)
+    roles = ["Mafia"] * mafia_count
+    if player_count >= 5:
+        roles.append("Detective")
+    if player_count >= 6:
+        roles.append("Doctor")
+    while len(roles) < player_count:
+        roles.append("Villager")
+    return roles[:player_count]
 
 
 @dataclass
@@ -156,14 +167,24 @@ def _pick_personality_constrained(
         )
     ]
 
+    if demo and not eligible:
+        # Demo / constrained pools can temporarily exhaust the frequency cap.
+        # In that case, preserve hard exclusions but relax the cap so game
+        # creation degrades gracefully instead of aborting.
+        eligible = [p for p in pool if p not in excluded]
+
     if not eligible:
         raise ValueError(
             f"No valid personality for role={role} archetype={archetype} "
             f"with current counts {current_counts}. "
             f"Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
         )
+    if not demo:
+        return random.choice(eligible)
 
-    return random.choice(eligible)
+    min_count = min(current_counts.get(p, 0) for p in eligible)
+    least_used = [p for p in eligible if current_counts.get(p, 0) == min_count]
+    return random.choice(least_used)
 
 
 def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -> GameSetup:
@@ -172,7 +193,7 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
     memory_store.load()
 
     # 1. Shuffle roles
-    roles  = list(ROLE_DISTRIBUTION)
+    roles  = _build_role_distribution(len(PLAYER_NAMES))
     names  = list(PLAYER_NAMES)
     random.shuffle(roles)
     role_map: dict[str, str] = dict(zip(names, roles))
@@ -251,17 +272,21 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
 
     # 6. Identify role assignments
     mafia_names    = [n for n, r in role_map.items() if r == "Mafia"]
-    assert len(mafia_names) == 2
-    m1, m2         = mafia_names
     detective_name = next(n for n, r in role_map.items() if r == "Detective")
     doctor_name    = next(n for n, r in role_map.items() if r == "Doctor")
     villager_names = [n for n, r in role_map.items() if r == "Villager"]
 
     # 7. Instantiate agents
     narrator  = NarratorAgent(narrator_cl)
-    mafia     = [
-        MafiaAgent(m1, m2, archetype_map[m1], personality_map[m1], clients[m1]),
-        MafiaAgent(m2, m1, archetype_map[m2], personality_map[m2], clients[m2]),
+    mafia = [
+        MafiaAgent(
+            name,
+            [ally for ally in mafia_names if ally != name],
+            archetype_map[name],
+            personality_map[name],
+            clients[name],
+        )
+        for name in mafia_names
     ]
     detective = DetectiveAgent(detective_name, archetype_map[detective_name], personality_map[detective_name], clients[detective_name])
     doctor    = DoctorAgent(doctor_name, archetype_map[doctor_name], personality_map[doctor_name], clients[doctor_name])

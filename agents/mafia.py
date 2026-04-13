@@ -10,9 +10,16 @@ from engine.game_state import GameState
 class MafiaAgent:
     role = "Mafia"
 
-    def __init__(self, name: str, partner_name: str, archetype: str, personality: str, client) -> None:
+    def __init__(
+        self,
+        name: str,
+        partner_names: list[str],
+        archetype: str,
+        personality: str,
+        client,
+    ) -> None:
         self.name         = name
-        self.partner_name = partner_name
+        self.partner_names = list(partner_names)
         self.archetype    = archetype
         self.personality  = personality
         # Track reasoning from previous night for Syndicate coordination
@@ -21,7 +28,7 @@ class MafiaAgent:
             client=client,
             name=name,
             description=f"[Mafia] [{archetype}] [{personality}]",
-            instructions=build_mafia_prompt(name, partner_name, archetype, personality),
+            instructions=build_mafia_prompt(name, tuple(self.partner_names), archetype, personality),
             context_providers=[BeliefStateProvider(), CrossGameMemoryProvider(), InMemoryHistoryProvider("history", load_messages=True)],
             middleware=[ResilientSessionMiddleware(), RateLimitMiddleware(), corporate_speak_middleware, ReasoningActionMiddleware(), BeliefUpdateMiddleware()],
             tools=[cast_vote, choose_target],
@@ -43,8 +50,15 @@ class MafiaAgent:
             self.session = new_session
         return reasoning, action
 
-    async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
-        targets = [p for p in game_state.get_alive_players() if p != self.name]
+    async def cast_vote(
+        self,
+        game_state: GameState,
+        history: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+        coordination_note: str = "",
+    ) -> tuple[str, str]:
+        targets = allowed_targets or [p for p in game_state.get_alive_players() if p != self.name]
         reasoning, action, new_session = await run_agent_stream(
             self.agent,
             format_vote_prompt(
@@ -52,6 +66,7 @@ class MafiaAgent:
                 history,
                 self.name,
                 targets,
+                coordination_note=coordination_note,
             ),
             session=self.session,
             prefer_non_stream=True,
@@ -63,22 +78,34 @@ class MafiaAgent:
     async def choose_night_kill(
         self,
         game_state: GameState,
-        partner_action: str | None = None,
-        partner_reasoning: str | None = None,
+        teammate_actions: list[str] | None = None,
+        teammate_reasonings: list[tuple[str, str]] | None = None,
     ) -> tuple[str, str]:
         targets      = game_state.get_alive_town()
-        partner_note = f"\n{self.partner_name} is leaning toward: {partner_action}" if partner_action else ""
+        partner_note = ""
+        if teammate_actions:
+            partner_note = "\n".join(
+                f"{note}" for note in teammate_actions if note.strip()
+            )
+            if partner_note:
+                partner_note = f"\nCurrent Syndicate leanings:\n{partner_note}"
 
         # Syndicate channel: inject teammate's reasoning from the previous night
         syndicate_block = ""
-        if partner_reasoning:
-            syndicate_block = (
-                f"\n\n--- SYNDICATE CHANNEL ---\n"
-                f"{self.partner_name}'s REASONING from last night:\n"
-                f"{partner_reasoning}\n"
-                f"--- END SYNDICATE ---\n"
-                f"Evaluate their reasoning. Do you CONFIRM or PIVOT? State why."
-            )
+        if teammate_reasonings:
+            rendered = []
+            for teammate, reasoning in teammate_reasonings:
+                if not reasoning:
+                    continue
+                rendered.append(f"{teammate}'s REASONING from the previous night:\n{reasoning}")
+            joined = "\n\n".join(rendered)
+            if joined:
+                syndicate_block = (
+                    f"\n\n--- SYNDICATE CHANNEL ---\n"
+                    f"{joined}\n"
+                    f"--- END SYNDICATE ---\n"
+                    f"Evaluate your teammates' reasoning. Do you CONFIRM the current line or PIVOT? State why."
+                )
 
         reasoning, action, new_session = await run_agent_stream(
             self.agent,

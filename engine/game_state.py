@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from config.settings import MAFIA_DETECTIVE_VOTE_WEIGHT
+
 
 class GamePhase(Enum):
     DAY_DISCUSSION = "DAY DISCUSSION"
@@ -43,6 +45,7 @@ class GameState:
     doctor_protect_target: str | None = None
     last_protected: str | None = None
     detective_findings: dict[str, str] = field(default_factory=dict)
+    evasion_scores: dict[str, int] = field(default_factory=dict)
     eliminated_this_round: str | None = None
     winner: str | None = None
     game_log: list[LogEntry] = field(default_factory=list)
@@ -93,25 +96,39 @@ class GameState:
         return "\n".join(lines)
 
     def tally_votes(self) -> str | None:
-        if not self.votes:
+        counts = self.get_weighted_vote_counts()
+        if not counts:
             return None
-        counts: dict[str, int] = {}
-        for target in self.votes.values():
-            counts[target] = counts.get(target, 0) + 1
         max_votes = max(counts.values())
         leaders   = [n for n, c in counts.items() if c == max_votes]
         return leaders[0] if len(leaders) == 1 else None
 
     def get_tied_players(self) -> list[str]:
         """Return the list of players tied for the most votes, or [] if no tie."""
-        if not self.votes:
+        counts = self.get_weighted_vote_counts()
+        if not counts:
             return []
-        counts: dict[str, int] = {}
-        for target in self.votes.values():
-            counts[target] = counts.get(target, 0) + 1
         max_votes = max(counts.values())
         leaders = [n for n, c in counts.items() if c == max_votes]
         return leaders if len(leaders) > 1 else []
+
+    def get_vote_weight(self, voter: str) -> int:
+        """Return the effective vote weight for *voter*."""
+        player = self.players.get(voter)
+        if not player:
+            return 1
+        if player.role == "Detective":
+            return MAFIA_DETECTIVE_VOTE_WEIGHT
+        return 1
+
+    def get_weighted_vote_counts(self, votes: dict[str, str] | None = None) -> dict[str, float]:
+        """Return target -> weighted vote total for the given votes."""
+        vote_map = votes if votes is not None else self.votes
+        counts: dict[str, float] = {}
+        for voter, target in vote_map.items():
+            weight = float(self.get_vote_weight(voter))
+            counts[target] = counts.get(target, 0.0) + weight
+        return counts
 
     def eliminate_player(self, name: str) -> None:
         if name in self.players:

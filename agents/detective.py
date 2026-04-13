@@ -15,6 +15,7 @@ class DetectiveAgent:
         self.archetype   = archetype
         self.personality  = personality
         self.findings: dict[str, str] = {}
+        self.reveal_vote_used = False
         self.agent       = Agent(
             client=client,
             name=name,
@@ -46,8 +47,15 @@ class DetectiveAgent:
             self.session = new_session
         return reasoning, action
 
-    async def cast_vote(self, game_state: GameState, history: list[str]) -> tuple[str, str]:
-        targets       = [p for p in game_state.get_alive_players() if p != self.name]
+    async def cast_vote(
+        self,
+        game_state: GameState,
+        history: list[str],
+        *,
+        allowed_targets: list[str] | None = None,
+        coordination_note: str = "",
+    ) -> tuple[str, str]:
+        targets = allowed_targets or [p for p in game_state.get_alive_players() if p != self.name]
         findings_text = "\n".join(f"  {k}: {v}" for k, v in self.findings.items()) or "  None."
         reasoning, action, new_session = await run_agent_stream(
             self.agent,
@@ -57,7 +65,29 @@ class DetectiveAgent:
                 self.name,
                 targets,
                 private_context=f"Your findings:\n{findings_text}",
+                coordination_note=coordination_note,
             ),
+            session=self.session,
+            prefer_non_stream=True,
+        )
+        if new_session is not None:
+            self.session = new_session
+        return reasoning, action
+
+    async def reveal_vote_window(
+        self,
+        game_state: GameState,
+        history: list[str],
+    ) -> tuple[str, str]:
+        findings_text = "\n".join(f"  {k}: {v}" for k, v in self.findings.items()) or "  None."
+        reasoning, action, new_session = await run_agent_stream(
+            self.agent,
+            f"{game_state.get_public_state_summary()}\n\n"
+            f"Your findings:\n{findings_text}\n\n"
+            "REVEAL VOTE WINDOW: you are about to be eliminated. This is your one final chance "
+            "to dump your information and steer the town before the vote is locked.\n"
+            "Claim your role if needed. State all findings plainly. Name the player the room "
+            "must vote next and why. Max 100 words.",
             session=self.session,
             prefer_non_stream=True,
         )
