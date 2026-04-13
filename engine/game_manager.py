@@ -168,18 +168,34 @@ def _pick_personality_constrained(
     ]
 
     if not eligible:
-        # With 11 players, 8 personalities, and archetype exclusions the
-        # frequency caps can be exhausted.  Preserve hard exclusions but
-        # relax the cap so game creation degrades gracefully instead of
-        # crashing.
+        # Fallback step 1: relax frequency caps but keep ALL exclusions
+        # (Tier 1 universal + Tier 2 role-specific).  This is the mildest
+        # violation — the personality is fine, just over-represented.
         eligible = [p for p in pool if p not in excluded]
 
     if not eligible:
-        raise ValueError(
-            f"No valid personality for role={role} archetype={archetype} "
-            f"with current counts {current_counts}. "
-            f"Exclusions={excluded}, cap={_PERSONALITY_FREQUENCY_CAP}"
+        # Fallback step 2: relax Tier 2 role-specific bans but keep
+        # Tier 1 universal bans.  A Tier 2 violation (e.g. Diplomatic +
+        # TheParasite on Detective) is sub-optimal but the agent's voice
+        # stays coherent.  A Tier 1 violation (e.g. Reactive + VibesVoter)
+        # produces incoherent behaviour and should be avoided.
+        tier1_excluded = set(PERSONALITY_EXCLUSIONS.get(role, []))
+        tier1_excluded |= set(ARCHETYPE_PERSONALITY_EXCLUSIONS.get(archetype, []))
+        eligible = [p for p in pool if p not in tier1_excluded]
+
+    if not eligible:
+        # Fallback step 3 (last resort): all personalities excluded even
+        # after relaxing Tier 2.  This should be unreachable with the
+        # current exclusion tables, but degrade gracefully instead of
+        # crashing: return a random personality from the full pool.
+        # A mismatched personality is better than no game.
+        print(
+            f"  [⚠] Personality pool exhausted for role={role} "
+            f"archetype={archetype} — selecting random personality "
+            f"(all constraints relaxed).",
+            file=sys.stderr,
         )
+        return random.choice(pool)
     if not demo:
         return random.choice(eligible)
 

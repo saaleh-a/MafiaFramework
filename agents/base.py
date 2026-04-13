@@ -66,6 +66,15 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
             + _VOTE_BAN_REMINDER
         )
 
+    # Identity disambiguation: prevent the agent from confusing its own
+    # name in other players' dialogue with its own statements.
+    identity_note = (
+        f"\nIDENTITY NOTE: You are {agent_name}. When other players mention "
+        f"\"{agent_name}\" below, they are talking ABOUT you — those are NOT "
+        f"your words. Your own prior statements are already in your memory. "
+        f"Respond as \"I\", never as \"{agent_name}\"."
+    )
+
     if len(others_history) == 1:
         last_speaker = _extract_name(others_history[0])
         return (
@@ -73,6 +82,7 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
             f"{others_history[0]}\n\n"
             f"^ {last_speaker} just spoke. "
             f"Respond directly to what they said."
+            + identity_note
             + _VOTE_BAN_REMINDER
         )
 
@@ -85,6 +95,7 @@ def format_discussion_prompt(history: list[str], agent_name: str) -> str:
         f"LAST MESSAGE (respond to this):\n{last}\n\n"
         f"^ {last_speaker} just said that. Talk TO them. "
         f"Agree, disagree, ask a follow-up, or challenge them directly."
+        + identity_note
         + _VOTE_BAN_REMINDER
     )
 
@@ -437,17 +448,8 @@ async def run_agent_stream(
     async def _do_stream_call() -> str:
         """Single streaming API call — returns the concatenated text."""
         chunks: list[str] = []
-        seen_hashes: set[str] = set()
         async for chunk in agent.run(prompt, stream=True, session=session):
             if chunk.text:
-                chunk_hash = _stable_text_hash(chunk.text)
-                if chunk_hash in seen_hashes:
-                    logger.info(
-                        "[%s] Skipping duplicate streaming chunk during rebuild",
-                        player_name,
-                    )
-                    continue
-                seen_hashes.add(chunk_hash)
                 chunks.append(chunk.text)
         return _collapse_repeated_passage("".join(chunks))
 

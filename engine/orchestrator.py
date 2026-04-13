@@ -282,17 +282,13 @@ class MafiaGameOrchestrator:
         if top_score >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
             return top_target, top_score, "belief"
 
-        consensus_scores = self._compute_room_suspicion(legal)
-        consensus_ranked = sorted(
-            legal,
-            key=lambda target: (
-                -consensus_scores.get(target, 0.0),
-                -self._belief_graph.evasion_scores.get(target, 0),
-                target,
-            ),
-        )
-        consensus_top = consensus_ranked[0]
-        return consensus_top, top_score, "consensus"
+        # Town agents always vote on their own beliefs, never falling back
+        # to room consensus.  Independent reasoning produces more diverse
+        # votes and prevents early accusations from snowballing into
+        # unanimous miskills.  The agent's own top target (even with low
+        # confidence) is always returned so the coordination note can flag
+        # the uncertainty.
+        return top_target, top_score, "belief"
 
     def _build_coordination_note(
         self,
@@ -302,14 +298,19 @@ class MafiaGameOrchestrator:
         basis: str,
         confidence: float,
     ) -> str:
-        """Human-readable vote coordination note for the vote prompt."""
+        """Human-readable vote coordination note for the vote prompt.
+
+        This note is purely informational — it tells the agent what the
+        room pressure looks like and what the belief state suggests, but
+        the agent is free to ignore it entirely.
+        """
         shortlist = [target for target in self._current_vote_shortlist if target in allowed_targets]
         display_shortlist = shortlist or allowed_targets
         note = [
-            "CONSENSUS TRACKING:",
+            "ROOM AWARENESS:",
             f"Top pressure targets: {', '.join(display_shortlist)}.",
-            f"Recommended vote for you: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
-            "Pick from the shortlist unless you have a real reason to override it.",
+            f"Your belief-based read: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
+            "This is informational only — vote on YOUR own reasoning, not the room's momentum.",
         ]
         if self._belief_graph.evasion_scores:
             evasion_text = ", ".join(
@@ -338,7 +339,13 @@ class MafiaGameOrchestrator:
         recommended_target: str | None,
         confidence: float,
     ) -> tuple[str | None, str | None]:
-        """Resolve a final vote target and explain any engine-side override."""
+        """Resolve a final vote target.
+
+        The engine respects the agent's parsed vote whenever possible.
+        It only intervenes when the vote is unparseable or targets an
+        illegal player.  No high-confidence override — agents act
+        independently.
+        """
         legal = [target for target in allowed_targets if target != voter]
         if not legal:
             return None, "no legal targets available"
@@ -348,22 +355,6 @@ class MafiaGameOrchestrator:
 
         if parsed_target is None:
             return recommended_target or legal[0], "vote was unparseable; used engine recommendation"
-
-        if not recommended_target:
-            return parsed_target, None
-
-        if parsed_target == recommended_target:
-            return parsed_target, None
-
-        override_text = f"{reasoning}\n{action}".lower()
-        if "override:" in override_text:
-            return parsed_target, None
-
-        if confidence >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
-            return (
-                recommended_target,
-                f"vote contradicted high-confidence belief state; forced to {recommended_target}",
-            )
 
         return parsed_target, None
 
@@ -1031,7 +1022,14 @@ class MafiaGameOrchestrator:
             await self._narrate("A quiet dawn. Nobody died tonight.")
 
     async def _narrate(self, prompt: str) -> None:
-        reasoning, announcement = await self.narrator.announce(prompt, self.gs)
+        try:
+            reasoning, announcement = await self.narrator.announce(prompt, self.gs)
+        except Exception as exc:
+            logger.error("[Narrator] Narration failed: %s", exc)
+            # Graceful degradation: produce a minimal announcement so the
+            # game can continue without a narrator flourish.
+            reasoning = ""
+            announcement = prompt
         self.gs.log("Narrator", "Narrator", "Impartial", reasoning, announcement)
         self._print("Narrator", "Narrator", "Impartial", reasoning, announcement)
 

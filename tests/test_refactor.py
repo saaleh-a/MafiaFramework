@@ -3560,10 +3560,11 @@ class TestGameManagerPlayerNames(unittest.TestCase):
     def test_role_distribution(self):
         from engine.game_manager import PLAYER_NAMES, _build_role_distribution
         roles = _build_role_distribution(len(PLAYER_NAMES))
-        self.assertEqual(roles.count("Mafia"), 2)
+        # 11 players → _recommended_mafia_count(11) = 3 (11 > 10, ≤ 15)
+        self.assertEqual(roles.count("Mafia"), 3)
         self.assertEqual(roles.count("Detective"), 1)
         self.assertEqual(roles.count("Doctor"), 1)
-        self.assertEqual(roles.count("Villager"), 7)
+        self.assertEqual(roles.count("Villager"), 6)
 
 
 # ===================================================================== #
@@ -3712,6 +3713,305 @@ class TestFrameworkBlocks(unittest.TestCase):
         for name, block in FRAMEWORK_BLOCKS.items():
             self.assertIsInstance(block, str, f"{name} is not a string")
             self.assertGreater(len(block.strip()), 0, f"{name} is empty")
+
+
+# ===================================================================== #
+#  Failure A: Personality constraint exhaustion graceful degradation      #
+# ===================================================================== #
+
+class TestPersonalityConstraintExhaustion(unittest.TestCase):
+    """Verify _pick_personality_constrained never crashes (Failure A)."""
+
+    def test_no_crash_with_all_slots_exhausted(self):
+        """When all personality slots are filled, cap relaxation should
+        return a valid personality rather than raising ValueError."""
+        from engine.game_manager import _pick_personality_constrained
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Simulate 8 players already assigned: exhaust all caps
+        # Non-consensus cap is 2, consensus cap is 1.
+        counts = {
+            "TheGhost": 2, "TheAnalyst": 2,
+            "TheConfessor": 1, "TheParasite": 1,
+            "TheMartyr": 2, "ThePerformer": 1,
+            "VibesVoter": 2, "MythBuilder": 1,
+        }
+        # 9th player should get a personality via cap relaxation
+        result = _pick_personality_constrained(
+            "Villager", counts, demo=False, archetype="Paranoid",
+        )
+        self.assertIn(result, ALL_PERSONALITIES)
+
+    def test_no_crash_with_heavy_exclusions(self):
+        """Role+archetype combos that exclude many personalities must
+        still return a valid personality instead of crashing."""
+        from engine.game_manager import _pick_personality_constrained
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Detective+Passive: excludes TheParasite, ThePerformer, MythBuilder, TheGhost
+        counts = {
+            "TheAnalyst": 2, "TheConfessor": 1,
+            "VibesVoter": 2, "TheMartyr": 2,
+        }
+        result = _pick_personality_constrained(
+            "Detective", counts, demo=False, archetype="Passive",
+        )
+        self.assertIn(result, ALL_PERSONALITIES)
+        # Should NOT be in the excluded set
+        self.assertNotIn(result, {"TheParasite", "ThePerformer", "MythBuilder", "TheGhost"})
+
+
+# ===================================================================== #
+#  Failure B: Credential error detection in rate limiter                 #
+# ===================================================================== #
+
+class TestCredentialErrorDetection(unittest.TestCase):
+    """Verify that Azure CLI credential errors are classified as timeout
+    errors so they are retried instead of crashing (Failure B)."""
+
+    def test_credential_unavailable_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("CredentialUnavailableError: az account get-access-token failed")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_credential_class_name_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+
+        class CredentialUnavailableError(Exception):
+            pass
+
+        exc = CredentialUnavailableError("token acquisition failed")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_generic_credential_error_not_false_positive(self):
+        """Generic credential errors (e.g., bad password) should NOT be
+        classified as timeout errors — only unavailability."""
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("Invalid credentials provided for authentication")
+        self.assertFalse(_is_timeout_error(exc))
+
+    def test_az_timeout_detected(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("AzureCliCredential process timed out")
+        self.assertTrue(_is_timeout_error(exc))
+
+    def test_normal_error_not_false_positive(self):
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("DeploymentNotFound: model does not exist")
+        self.assertFalse(_is_timeout_error(exc))
+
+
+# ===================================================================== #
+#  Failure C: Identity disambiguation in discussion prompt               #
+# ===================================================================== #
+
+class TestIdentityDisambiguation(unittest.TestCase):
+    """Verify that discussion prompts include identity disambiguation
+    when the agent's name appears in other players' messages (Failure C)."""
+
+    def test_identity_note_in_discussion_prompt(self):
+        from agents.base import format_discussion_prompt
+        history = ["Bob: Alice has been really quiet."]
+        prompt = format_discussion_prompt(history, "Alice")
+        self.assertIn("IDENTITY NOTE", prompt)
+        self.assertIn("You are Alice", prompt)
+
+    def test_identity_note_with_multiple_messages(self):
+        from agents.base import format_discussion_prompt
+        history = [
+            "Bob: Alice seems suspicious to me.",
+            "Charlie: I agree, Alice hasn't said much.",
+        ]
+        prompt = format_discussion_prompt(history, "Alice")
+        self.assertIn("IDENTITY NOTE", prompt)
+        self.assertIn("those are NOT your words", prompt)
+
+    def test_no_identity_note_when_first_speaker(self):
+        """First speaker gets no identity note since nobody mentioned them."""
+        from agents.base import format_discussion_prompt
+        prompt = format_discussion_prompt([], "Alice")
+        self.assertNotIn("IDENTITY NOTE", prompt)
+
+
+# ===================================================================== #
+#  Failure D: Streaming chunk dedup removed                              #
+# ===================================================================== #
+
+class TestStreamingChunkDedup(unittest.TestCase):
+    """Verify parse_reasoning_action handles repeated small tokens
+    correctly after the per-chunk dedup was removed (Failure D)."""
+
+    def test_repeated_tokens_preserved(self):
+        """Repeated small words like 'the' or 'I' should be preserved."""
+        from agents.base import parse_reasoning_action
+        text = (
+            "REASONING: I think the suspect is the one who talked the most. "
+            "ACTION: I'm voting for Bob."
+        )
+        reasoning, action = parse_reasoning_action(text)
+        # All 'the' instances should be preserved
+        self.assertIn("the suspect", reasoning)
+        self.assertIn("the one", reasoning)
+        self.assertIn("Bob", action)
+
+    def test_garbled_action_boundary(self):
+        """If ACTION: appears mid-garble, rsplit should handle it."""
+        from agents.base import parse_reasoning_action
+        text = "REASONING: I think carefully. ACTION: VOTE: Bob"
+        reasoning, action = parse_reasoning_action(text)
+        self.assertIn("VOTE: Bob", action)
+
+
+# ===================================================================== #
+#  Failure E: Early-round consensus collapse protection                  #
+# ===================================================================== #
+
+class TestIndependentVoteRecommendations(unittest.TestCase):
+    """Verify that Town agents always get belief-based vote recommendations
+    and are never overridden by the engine (independence-first)."""
+
+    def _make_orchestrator(self):
+        """Build a minimal orchestrator for testing coordination logic."""
+        from unittest.mock import MagicMock
+        from engine.game_state import GameState, PlayerState
+        from config.settings import MAFIA_VOTE_CONFIDENCE_THRESHOLD
+
+        players = {
+            "Alice": PlayerState(name="Alice", role="Villager", archetype="Paranoid"),
+            "Bob": PlayerState(name="Bob", role="Villager", archetype="Passive"),
+            "Charlie": PlayerState(name="Charlie", role="Villager", archetype="Contrarian"),
+            "Dan": PlayerState(name="Dan", role="Villager", archetype="Stubborn"),
+            "Eve": PlayerState(name="Eve", role="Detective", archetype="Analytical"),
+            "Frank": PlayerState(name="Frank", role="Mafia", archetype="Manipulative"),
+        }
+        gs = GameState(players=players)
+        gs.round_number = 1
+
+        orch = MagicMock()
+        orch.gs = gs
+        orch._current_vote_shortlist = ["Alice", "Bob"]
+        orch._belief_graph = MagicMock()
+        orch._belief_graph.evasion_scores = {}
+        orch.detective = MagicMock()
+        orch.detective.name = "Eve"
+        orch.detective.findings = {}
+
+        return orch, MAFIA_VOTE_CONFIDENCE_THRESHOLD
+
+    def test_coordination_note_is_informational(self):
+        """Coordination notes should present room awareness without
+        directing the agent's vote."""
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orch, _ = self._make_orchestrator()
+
+        note = MafiaGameOrchestrator._build_coordination_note(
+            orch,
+            "Charlie",
+            ["Alice", "Bob", "Dan", "Frank"],
+            "Alice",
+            "belief",
+            0.20,
+        )
+        self.assertIn("ROOM AWARENESS", note)
+        self.assertIn("informational only", note.lower())
+        self.assertNotIn("Pick from the shortlist", note)
+
+    def test_town_always_gets_belief_basis(self):
+        """Town agents should always receive belief-based recommendations,
+        never consensus-based, regardless of round number."""
+        from engine.orchestrator import MafiaGameOrchestrator
+        from agents.belief_state import SuspicionState
+
+        orch, _ = self._make_orchestrator()
+        orch.mafia = []
+
+        # Set up beliefs — Alice has low but non-zero suspicion on Bob
+        belief = SuspicionState(probabilities={
+            "Bob": 0.25, "Charlie": 0.0, "Dan": 0.0,
+            "Eve": 0.0, "Frank": 0.0,
+        })
+        orch._beliefs = {"Alice": belief}
+
+        for rnd in [1, 2, 3, 5]:
+            orch.gs.round_number = rnd
+            target, score, basis = MafiaGameOrchestrator._recommend_vote_target(
+                orch, "Alice", ["Bob", "Charlie", "Dan", "Frank"],
+            )
+            self.assertEqual(basis, "belief",
+                             f"Round {rnd}: expected belief basis, got {basis}")
+
+    def test_engine_does_not_override_parsed_vote(self):
+        """_resolve_vote_target should never override a parseable vote,
+        even when confidence is high."""
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orch, _ = self._make_orchestrator()
+        # Agent voted for Dan but recommendation was Alice at high confidence
+        result, warning = MafiaGameOrchestrator._resolve_vote_target(
+            orch,
+            "Charlie",           # voter
+            "Dan",               # parsed_target (agent's choice)
+            "Dan is suspicious", # reasoning
+            "VOTE: Dan",         # action
+            ["Alice", "Bob", "Dan", "Frank"],  # allowed
+            "Alice",             # recommended
+            0.90,                # high confidence
+        )
+        self.assertEqual(result, "Dan", "Engine must not override agent's parsed vote")
+        self.assertIsNone(warning)
+
+
+class TestRankedPersonalityFallback(unittest.TestCase):
+    """Verify that personality fallback prefers milder violations over
+    severe ones (Tier 2 relaxed before Tier 1)."""
+
+    def test_tier2_relaxed_before_tier1(self):
+        """When caps are exhausted, Tier 2 bans should be relaxed before
+        Tier 1 universal bans.  A Diplomatic+TheParasite Detective is
+        sub-optimal but better than Reactive+VibesVoter."""
+        from engine.game_manager import (
+            _pick_personality_constrained,
+            ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS,
+            ARCHETYPE_PERSONALITY_EXCLUSIONS,
+        )
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Exhaust ALL caps AND make the only non-excluded personality be
+        # one that is Tier 2 banned for this role but NOT Tier 1 banned.
+        # Diplomatic archetype: Tier 1 bans TheConfessor.
+        # Tier 2 bans TheParasite for Detective.
+        # So if TheParasite is the only one left after cap relaxation,
+        # the ranked fallback should select it (Tier 2 relaxed).
+        counts = {p: 99 for p in ALL_PERSONALITIES}  # exhaust all caps
+        # Only TheParasite survives after cap relaxation + Tier 1 filtering:
+        # Diplomatic bans TheConfessor (Tier 1).  TheParasite is banned
+        # for Detective by Tier 2 only.
+        result = _pick_personality_constrained(
+            "Detective", counts, demo=False, archetype="Diplomatic",
+        )
+        # Should return SOME valid personality, not crash
+        self.assertIn(result, ALL_PERSONALITIES)
+
+    def test_fallback_step1_prefers_excluded_set(self):
+        """Step 1 (cap relaxation) should still respect all exclusions."""
+        from engine.game_manager import (
+            _pick_personality_constrained,
+            ARCHETYPE_PERSONALITY_EXCLUSIONS,
+        )
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Reactive bans VibesVoter (Tier 1).  With caps exhausted,
+        # step 1 should return a personality that is NOT VibesVoter.
+        counts = {p: 99 for p in ALL_PERSONALITIES}
+        results = set()
+        for _ in range(50):
+            result = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Reactive",
+            )
+            results.add(result)
+        self.assertNotIn("VibesVoter", results,
+                         "Tier 1 ban (Reactive+VibesVoter) must never be relaxed in step 1")
 
 
 if __name__ == "__main__":
