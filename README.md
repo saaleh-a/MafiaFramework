@@ -475,7 +475,7 @@ Every agent prompt includes:
 
 - **Python 3.12+**
 - **Azure CLI** (`az`) — [Install guide](https://learn.microsoft.com/cli/azure/install-azure-cli)
-- **Azure AI Foundry project** with at least one deployed model (e.g. `gpt-4o-mini`)
+- **Azure AI Foundry project** with at least one deployed model (e.g. `gpt-5.4-mini`)
 - An active `az login` session with access to the Foundry project
 
 ---
@@ -512,13 +512,13 @@ Every agent prompt includes:
 
    ```dotenv
    FOUNDRY_PROJECT_ENDPOINT=https://<your-resource>.services.ai.azure.com
-   FOUNDRY_MODEL=gpt-4o-mini
+   FOUNDRY_MODEL=gpt-5.4-mini
    ```
 
    | Variable                   | Required | Description                                                    |
    |----------------------------|----------|----------------------------------------------------------------|
    | `FOUNDRY_PROJECT_ENDPOINT` | Yes      | Your Azure AI Foundry project endpoint URL                     |
-   | `FOUNDRY_MODEL`            | No       | Model deployment name (defaults to `gpt-4o-mini`)              |
+   | `FOUNDRY_MODEL`            | No       | Model deployment name (defaults to `gpt-5.4-mini`)              |
 
    **Advanced configuration** (all optional, with sensible defaults):
 
