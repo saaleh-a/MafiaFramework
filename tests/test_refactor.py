@@ -214,7 +214,7 @@ class TestPersonalityExclusion(unittest.TestCase):
         p = _pick_personality_constrained("Villager", counts, demo=False)
         self.assertNotEqual(p, "TheGhost")
 
-    def test_cap_relaxation_when_all_at_cap(self):
+    def test_cap_relaxation_when_exhausted(self):
         """Cap relaxation allows a pick when all personalities are at cap."""
         from prompts.personalities import ALL_PERSONALITIES
         # Saturate every personality at the cap
@@ -3540,8 +3540,8 @@ class TestPersonalityConstrainedFrequencyCap(unittest.TestCase):
                 p = _pick_personality_constrained("Villager", counts, archetype="Analytical")
                 self.assertNotEqual(p, cp)
 
-    def test_cap_relaxation_on_full_pool(self):
-        """Cap relaxation returns a personality when all are over cap."""
+    def test_cap_relaxation_with_archetype_when_exhausted(self):
+        """Cap relaxation returns a personality when all are over cap with archetype constraint."""
         from prompts.personalities import ALL_PERSONALITIES
         counts = {p: 10 for p in ALL_PERSONALITIES}
         # Should NOT raise — caps are relaxed, hard exclusions preserved
