@@ -56,7 +56,7 @@ You're setting up a virtual game night where 11 AI players will play Mafia. Firs
 | Resource                          | Purpose                                    |
 |-----------------------------------|--------------------------------------------|
 | **Azure AI Foundry project**      | Hosts the LLM deployments the agents use   |
-| **At least one model deployment** | e.g., `gpt-5.4-mini` — the AI brain(s)     |
+| **At least one model deployment** | e.g., `gpt-4o-mini` — the AI brain(s)     |
 | **Azure subscription access**     | Your `az login` account must have access   |
 
 ### Setting Up Azure AI Foundry
@@ -65,7 +65,7 @@ If you don't already have a Foundry project:
 
 1. Go to [Azure AI Foundry](https://ai.azure.com)
 2. Create a new project (or use an existing one)
-3. Deploy at least one model (e.g., `gpt-5.4-mini`)
+3. Deploy at least one model (e.g., `gpt-4o-mini`)
 4. Note the **Project endpoint** — it looks like `https://your-resource.services.ai.azure.com`
 5. Note the **Deployment name** — this is the model ID you'll use
 
@@ -126,7 +126,7 @@ Create a file named `.env` in the project root:
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://your-resource.services.ai.azure.com
-FOUNDRY_MODEL=gpt-5.4-mini
+FOUNDRY_MODEL=gpt-4o-mini
 ```
 
 ### Environment Variables
@@ -134,7 +134,7 @@ FOUNDRY_MODEL=gpt-5.4-mini
 | Variable                          | Required | Default        | Description                                    |
 |-----------------------------------|----------|----------------|------------------------------------------------|
 | `FOUNDRY_PROJECT_ENDPOINT`        | **Yes**  | —              | Your Azure AI Foundry project endpoint URL     |
-| `FOUNDRY_MODEL`                   | No       | `gpt-5.4-mini`  | Model deployment name                          |
+| `FOUNDRY_MODEL`                   | No       | `gpt-4o-mini`  | Model deployment name                          |
 
 ### Advanced Configuration
 
@@ -179,7 +179,7 @@ python check.py
 
 ```
 Endpoint : https://your-resource.services.ai.azure.com
-Model    : gpt-5.4-mini
+Model    : gpt-4o-mini
 
 Calling model...
 ✓ Ready to run the game.
@@ -523,8 +523,8 @@ Edit `config/model_registry.py`:
 
 ```python
 AVAILABLE_MODELS = [
-    ModelConfig(name="GPT-5.4-MINI", model_id="gpt-5.4-mini", short="54m"),
     ModelConfig(name="GPT-4O-MINI", model_id="gpt-4o-mini", short="4om"),
+    ModelConfig(name="GPT-4O", model_id="gpt-4o", short="4o"),
     # Add more deployments here
 ]
 ```

@@ -77,7 +77,7 @@ Each agent's behaviour is the product of four independently randomised dimension
 
 ### Model (Cognitive Engine)
 
-Each agent is backed by a randomly selected Azure AI model deployment. When multiple models are available, the same game may have agents running on GPT-5.4-mini, GPT-4o-mini, and others simultaneously. This creates natural cognitive diversity — different models reason differently even with identical prompts.
+Each agent is backed by a randomly selected Azure AI model deployment. When multiple models are available, the same game may have agents running on GPT-4o, GPT-4o-mini, and others simultaneously. This creates natural cognitive diversity — different models reason differently even with identical prompts.
 
 ### Archetype (Strategic Deviation)
 

@@ -5,7 +5,7 @@ load_dotenv()
 
 # Env vars matching the MAF FoundryChatClient conventions
 FOUNDRY_PROJECT_ENDPOINT: str = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
-FOUNDRY_MODEL: str = os.environ.get("FOUNDRY_MODEL", "gpt-5.4-mini")
+FOUNDRY_MODEL: str = os.environ.get("FOUNDRY_MODEL", "gpt-4o-mini")
 
 # ------------------------------------------------------------------ #
 #  Rate-limiting & resilience configuration                            #
