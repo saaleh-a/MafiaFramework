@@ -311,15 +311,15 @@ Vote coordination prevents the "everyone votes randomly" failure mode without sc
 
 ### Step 3: Per-Voter Recommendation
 `_recommend_vote_target()` generates role-aware recommendations:
-- **Mafia:** Consensus target, excluding partners
+- **Mafia:** Consensus target, excluding partners (Mafia coordinates strategically)
 - **Detective:** Red-check target if available, else belief-based
-- **Town:** Belief-based if confident (> `MAFIA_VOTE_CONFIDENCE_THRESHOLD = 0.45`), else consensus
+- **Town:** Always belief-based — agents vote on their own read, never room consensus
 
-### Step 4: Coordination Note
-`_build_coordination_note()` builds a human-readable vote guidance string injected into the agent's context. This is guidance, not a mandate — agents can and do override it based on their archetype (Contrarian agents frequently reject recommendations).
+### Step 4: Room Awareness Note
+`_build_coordination_note()` builds a human-readable informational note injected into the agent's context. It tells the agent what the room pressure looks like and what the belief state suggests, but explicitly states this is informational only. Agents are free to ignore it entirely.
 
 ### Step 5: Resolution
-`_resolve_vote_target()` applies engine-side overrides when the agent's parsed vote doesn't match a high-confidence recommendation. This is a safety net, not a primary control mechanism.
+`_resolve_vote_target()` resolves unparseable votes using the engine recommendation as a fallback. It never overrides a successfully parsed vote — agents act independently.
 
 ---
 

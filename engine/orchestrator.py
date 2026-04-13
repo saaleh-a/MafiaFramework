@@ -282,26 +282,13 @@ class MafiaGameOrchestrator:
         if top_score >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
             return top_target, top_score, "belief"
 
-        # Early-round protection: in rounds 1-2, prefer the agent's own
-        # (low-confidence) belief over room consensus.  Consensus in early
-        # rounds is unreliable and self-reinforcing — the first accusation
-        # can snowball into a unanimous miskill.  Returning the agent's
-        # own top target with its actual score lets the coordination note
-        # flag the low confidence and encourages independent reasoning.
-        if self.gs.round_number <= 2:
-            return top_target, top_score, "belief"
-
-        consensus_scores = self._compute_room_suspicion(legal)
-        consensus_ranked = sorted(
-            legal,
-            key=lambda target: (
-                -consensus_scores.get(target, 0.0),
-                -self._belief_graph.evasion_scores.get(target, 0),
-                target,
-            ),
-        )
-        consensus_top = consensus_ranked[0]
-        return consensus_top, top_score, "consensus"
+        # Town agents always vote on their own beliefs, never falling back
+        # to room consensus.  Independent reasoning produces more diverse
+        # votes and prevents early accusations from snowballing into
+        # unanimous miskills.  The agent's own top target (even with low
+        # confidence) is always returned so the coordination note can flag
+        # the uncertainty.
+        return top_target, top_score, "belief"
 
     def _build_coordination_note(
         self,
@@ -311,31 +298,20 @@ class MafiaGameOrchestrator:
         basis: str,
         confidence: float,
     ) -> str:
-        """Human-readable vote coordination note for the vote prompt."""
+        """Human-readable vote coordination note for the vote prompt.
+
+        This note is purely informational — it tells the agent what the
+        room pressure looks like and what the belief state suggests, but
+        the agent is free to ignore it entirely.
+        """
         shortlist = [target for target in self._current_vote_shortlist if target in allowed_targets]
         display_shortlist = shortlist or allowed_targets
         note = [
-            "CONSENSUS TRACKING:",
+            "ROOM AWARENESS:",
             f"Top pressure targets: {', '.join(display_shortlist)}.",
-            f"Recommended vote for you: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
+            f"Your belief-based read: {recommendation or 'none'} ({basis}, confidence {confidence:.2f}).",
+            "This is informational only — vote on YOUR own reasoning, not the room's momentum.",
         ]
-        # Early-round caution: in rounds 1-2 with low confidence, warn
-        # agents that consensus is unreliable and encourage independent
-        # reasoning over herd following.
-        if self.gs.round_number <= 2 and confidence < MAFIA_VOTE_CONFIDENCE_THRESHOLD:
-            note.append(
-                f"⚠ EARLY GAME WARNING: It is round {self.gs.round_number}. "
-                "There is very little evidence yet. The consensus is based on "
-                "first impressions, not confirmed information. Do NOT default to "
-                "the room's direction just because others are voting that way. "
-                "Think about WHO started the pressure and WHY. An early bandwagon "
-                "with no evidence is exactly how Mafia steers Town into eliminating "
-                "their own power roles. Vote on YOUR read, not the room's momentum."
-            )
-        else:
-            note.append(
-                "Pick from the shortlist unless you have a real reason to override it.",
-            )
         if self._belief_graph.evasion_scores:
             evasion_text = ", ".join(
                 f"{player}:{score}"
@@ -363,7 +339,13 @@ class MafiaGameOrchestrator:
         recommended_target: str | None,
         confidence: float,
     ) -> tuple[str | None, str | None]:
-        """Resolve a final vote target and explain any engine-side override."""
+        """Resolve a final vote target.
+
+        The engine respects the agent's parsed vote whenever possible.
+        It only intervenes when the vote is unparseable or targets an
+        illegal player.  No high-confidence override — agents act
+        independently.
+        """
         legal = [target for target in allowed_targets if target != voter]
         if not legal:
             return None, "no legal targets available"
@@ -373,22 +355,6 @@ class MafiaGameOrchestrator:
 
         if parsed_target is None:
             return recommended_target or legal[0], "vote was unparseable; used engine recommendation"
-
-        if not recommended_target:
-            return parsed_target, None
-
-        if parsed_target == recommended_target:
-            return parsed_target, None
-
-        override_text = f"{reasoning}\n{action}".lower()
-        if "override:" in override_text:
-            return parsed_target, None
-
-        if confidence >= MAFIA_VOTE_CONFIDENCE_THRESHOLD:
-            return (
-                recommended_target,
-                f"vote contradicted high-confidence belief state; forced to {recommended_target}",
-            )
 
         return parsed_target, None
 

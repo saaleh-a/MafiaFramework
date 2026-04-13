@@ -3866,9 +3866,9 @@ class TestStreamingChunkDedup(unittest.TestCase):
 #  Failure E: Early-round consensus collapse protection                  #
 # ===================================================================== #
 
-class TestEarlyRoundConsensusProtection(unittest.TestCase):
-    """Verify that the vote coordination pipeline provides early-round
-    caution when confidence is low (Failure E)."""
+class TestIndependentVoteRecommendations(unittest.TestCase):
+    """Verify that Town agents always get belief-based vote recommendations
+    and are never overridden by the engine (independence-first)."""
 
     def _make_orchestrator(self):
         """Build a minimal orchestrator for testing coordination logic."""
@@ -3898,39 +3898,120 @@ class TestEarlyRoundConsensusProtection(unittest.TestCase):
 
         return orch, MAFIA_VOTE_CONFIDENCE_THRESHOLD
 
-    def test_early_round_warning_in_coordination_note(self):
-        """In round 1, low-confidence coordination notes should warn
-        about unreliable consensus."""
+    def test_coordination_note_is_informational(self):
+        """Coordination notes should present room awareness without
+        directing the agent's vote."""
         from engine.orchestrator import MafiaGameOrchestrator
 
-        orch, threshold = self._make_orchestrator()
+        orch, _ = self._make_orchestrator()
 
         note = MafiaGameOrchestrator._build_coordination_note(
             orch,
             "Charlie",
             ["Alice", "Bob", "Dan", "Frank"],
             "Alice",
-            "consensus",
-            0.20,  # well below threshold
-        )
-        self.assertIn("EARLY GAME WARNING", note)
-
-    def test_no_early_warning_in_late_rounds(self):
-        """In round 3+, no early-game warning should appear."""
-        from engine.orchestrator import MafiaGameOrchestrator
-
-        orch, threshold = self._make_orchestrator()
-        orch.gs.round_number = 3
-
-        note = MafiaGameOrchestrator._build_coordination_note(
-            orch,
-            "Charlie",
-            ["Alice", "Bob", "Dan", "Frank"],
-            "Alice",
-            "consensus",
+            "belief",
             0.20,
         )
-        self.assertNotIn("EARLY GAME WARNING", note)
+        self.assertIn("ROOM AWARENESS", note)
+        self.assertIn("informational only", note.lower())
+        self.assertNotIn("Pick from the shortlist", note)
+
+    def test_town_always_gets_belief_basis(self):
+        """Town agents should always receive belief-based recommendations,
+        never consensus-based, regardless of round number."""
+        from engine.orchestrator import MafiaGameOrchestrator
+        from agents.belief_state import SuspicionState
+
+        orch, _ = self._make_orchestrator()
+        orch.mafia = []
+
+        # Set up beliefs — Alice has low but non-zero suspicion on Bob
+        belief = SuspicionState(probabilities={
+            "Bob": 0.25, "Charlie": 0.0, "Dan": 0.0,
+            "Eve": 0.0, "Frank": 0.0,
+        })
+        orch._beliefs = {"Alice": belief}
+
+        for rnd in [1, 2, 3, 5]:
+            orch.gs.round_number = rnd
+            target, score, basis = MafiaGameOrchestrator._recommend_vote_target(
+                orch, "Alice", ["Bob", "Charlie", "Dan", "Frank"],
+            )
+            self.assertEqual(basis, "belief",
+                             f"Round {rnd}: expected belief basis, got {basis}")
+
+    def test_engine_does_not_override_parsed_vote(self):
+        """_resolve_vote_target should never override a parseable vote,
+        even when confidence is high."""
+        from engine.orchestrator import MafiaGameOrchestrator
+
+        orch, _ = self._make_orchestrator()
+        # Agent voted for Dan but recommendation was Alice at high confidence
+        result, warning = MafiaGameOrchestrator._resolve_vote_target(
+            orch,
+            "Charlie",           # voter
+            "Dan",               # parsed_target (agent's choice)
+            "Dan is suspicious", # reasoning
+            "VOTE: Dan",         # action
+            ["Alice", "Bob", "Dan", "Frank"],  # allowed
+            "Alice",             # recommended
+            0.90,                # high confidence
+        )
+        self.assertEqual(result, "Dan", "Engine must not override agent's parsed vote")
+        self.assertIsNone(warning)
+
+
+class TestRankedPersonalityFallback(unittest.TestCase):
+    """Verify that personality fallback prefers milder violations over
+    severe ones (Tier 2 relaxed before Tier 1)."""
+
+    def test_tier2_relaxed_before_tier1(self):
+        """When caps are exhausted, Tier 2 bans should be relaxed before
+        Tier 1 universal bans.  A Diplomatic+TheParasite Detective is
+        sub-optimal but better than Reactive+VibesVoter."""
+        from engine.game_manager import (
+            _pick_personality_constrained,
+            ROLE_ARCHETYPE_PERSONALITY_EXCLUSIONS,
+            ARCHETYPE_PERSONALITY_EXCLUSIONS,
+        )
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Exhaust ALL caps AND make the only non-excluded personality be
+        # one that is Tier 2 banned for this role but NOT Tier 1 banned.
+        # Diplomatic archetype: Tier 1 bans TheConfessor.
+        # Tier 2 bans TheParasite for Detective.
+        # So if TheParasite is the only one left after cap relaxation,
+        # the ranked fallback should select it (Tier 2 relaxed).
+        counts = {p: 99 for p in ALL_PERSONALITIES}  # exhaust all caps
+        # Only TheParasite survives after cap relaxation + Tier 1 filtering:
+        # Diplomatic bans TheConfessor (Tier 1).  TheParasite is banned
+        # for Detective by Tier 2 only.
+        result = _pick_personality_constrained(
+            "Detective", counts, demo=False, archetype="Diplomatic",
+        )
+        # Should return SOME valid personality, not crash
+        self.assertIn(result, ALL_PERSONALITIES)
+
+    def test_fallback_step1_prefers_excluded_set(self):
+        """Step 1 (cap relaxation) should still respect all exclusions."""
+        from engine.game_manager import (
+            _pick_personality_constrained,
+            ARCHETYPE_PERSONALITY_EXCLUSIONS,
+        )
+        from prompts.personalities import ALL_PERSONALITIES
+
+        # Reactive bans VibesVoter (Tier 1).  With caps exhausted,
+        # step 1 should return a personality that is NOT VibesVoter.
+        counts = {p: 99 for p in ALL_PERSONALITIES}
+        results = set()
+        for _ in range(50):
+            result = _pick_personality_constrained(
+                "Villager", counts, demo=False, archetype="Reactive",
+            )
+            results.add(result)
+        self.assertNotIn("VibesVoter", results,
+                         "Tier 1 ban (Reactive+VibesVoter) must never be relaxed in step 1")
 
 
 if __name__ == "__main__":
