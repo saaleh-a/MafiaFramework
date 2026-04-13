@@ -135,7 +135,7 @@ An impartial **Narrator** agent (with omniscient knowledge of all roles) announc
 | `agents/memory.py`           | Persistent cross-game memory — role-aware learnings stored as JSON, loaded each game.        |
 | `agents/narrator.py`         | Narrator agent — omniscient, impartial game master announcements.                            |
 | `agents/mafia.py`            | Mafia agent — day discussion, voting, night kill target, Syndicate coordination.             |
-| `agents/detective.py`        | Detective agent — day discussion, voting, night investigation, Iroh Protocol reveal.         |
+| `agents/detective.py`        | Detective agent — day discussion, voting, night investigation, Last Stand Protocol reveal.         |
 | `agents/doctor.py`           | Doctor agent — day discussion, voting, night protection, Value-Protection Heuristic.         |
 | `agents/villager.py`         | Villager agent — day discussion, voting, Voter Consistency tracking.                         |
 | `config/model_registry.py`   | Model pool definition and Azure Foundry client factory.                                      |
@@ -361,7 +361,7 @@ Agents accumulate learnings across games via `GameMemoryStore`. Role-aware insig
 ### Context Providers
 
 Two MAF-native `ContextProvider` classes inject dynamic per-turn context:
-- **BeliefStateProvider** — Injects suspicion state, frustration warnings, overconfidence gates, scum-tell flags, temporal slip alerts, and Iroh Protocol reveal instructions.
+- **BeliefStateProvider** — Injects suspicion state, frustration warnings, overconfidence gates, scum-tell flags, temporal slip alerts, and Last Stand Protocol reveal instructions.
 - **CrossGameMemoryProvider** — Injects relevant learnings from previous games.
 
 ### Tools and Middleware
@@ -379,7 +379,7 @@ Three middleware components run on every player agent:
 
 Each player agent includes an `InMemoryHistoryProvider` from the MAF framework. This gives agents genuine multi-turn memory — each agent remembers what it and others actually said in prior rounds as proper message objects rather than a concatenated string. This reduces reasoning drift and partner-confusion errors.
 
-### Iroh Protocol
+### Last Stand Protocol
 
 When other agents' collective suspicion of a Detective or Doctor exceeds the self-preservation threshold (0.45), the system instructs them to reveal their role to survive. A dead Detective/Doctor helps nobody.
 
@@ -403,8 +403,8 @@ Agent prompts are assembled in `prompts/builder.py` from layered components:
    - **Incentive Reasoning** — Who benefits from each elimination?
 5. **Role-Specific Protocols** — Mandatory blocks that must not be removed:
    - **Mafia**: Deception Layer, Syndicate Channel (partner coordination), Mafia Threat Check (4 mandatory pre-reasoning questions + solo 5th question)
-   - **Detective**: Claim Protocol (mandatory red-check announcement), Iroh Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
-   - **Doctor**: Value-Protection Heuristic (protect the reasoner — evidence-based predictions, bandwagon resistance — not the loudest voice), Iroh Protocol
+   - **Detective**: Claim Protocol (mandatory red-check announcement), Last Stand Protocol (identity reveal), Red Check Reveal Strategy, Innocent Result Sharing
+   - **Doctor**: Value-Protection Heuristic (protect the reasoner — evidence-based predictions, bandwagon resistance — not the loudest voice), Last Stand Protocol
    - **Villager**: Voter Consistency (anti-Mafia-Steering tool — track vote blocs, last-moment switches, lone divergent votes)
    - **Detective**: Vote Pattern Analysis (lone divergent vote detection, voting bloc tracking, vote-vs-kill-target comparison)
    - **Narrator**: Night Anonymity Rule (no living player names during night)

@@ -489,8 +489,8 @@ run_game()
 | `get_top_suspect()`               | (name, probability) of highest suspicion            |
 | `remove_player(name)`             | Removes eliminated player                           |
 | `summary()`                       | Text for prompt injection                           |
-| `should_reveal_identity(...)`     | Iroh Protocol check                                 |
-| `get_iroh_level(...)`             | Returns "soft_hint", "hard_claim", "full_reveal", None |
+| `should_reveal_identity(...)`     | Last Stand Protocol check                                 |
+| `get_last_stand_level(...)`       | Returns "soft_hint", "hard_claim", "full_reveal", None |
 
 **`BeliefGraph`** — Scum-tell detector:
 | Method                             | Purpose                                             |
@@ -513,11 +513,11 @@ run_game()
 **Constants:**
 | Constant                       | Value  | Purpose                               |
 |--------------------------------|--------|----------------------------------------|
-| `SELF_PRESERVATION_THRESHOLD`  | 0.45   | Iroh Protocol base threshold           |
-| `IROH_SOFT_HINT_THRESHOLD`     | 0.35   | Graduated: soft hint                   |
-| `IROH_HARD_CLAIM_THRESHOLD`    | 0.45   | Graduated: hard claim                  |
-| `IROH_FULL_REVEAL_THRESHOLD`   | 0.55   | Graduated: full reveal                 |
-| `IROH_RED_CHECK_ADJUSTMENT`    | 0.10   | Lower thresholds when holding red check |
+| `SELF_PRESERVATION_THRESHOLD`  | 0.45   | Last Stand Protocol base threshold           |
+| `LAST_STAND_SOFT_HINT_THRESHOLD`     | 0.35   | Graduated: soft hint                   |
+| `LAST_STAND_HARD_CLAIM_THRESHOLD`    | 0.45   | Graduated: hard claim                  |
+| `LAST_STAND_FULL_REVEAL_THRESHOLD`   | 0.55   | Graduated: full reveal                 |
+| `LAST_STAND_RED_CHECK_ADJUSTMENT`    | 0.10   | Lower thresholds when holding red check |
 | `STRONG_EVIDENCE_THRESHOLD`    | 0.15   | Overconfident/Stubborn update threshold |
 | `WEAK_EVIDENCE_THRESHOLD`      | 0.05   | Volatile/Reactive update threshold     |
 
@@ -534,7 +534,7 @@ Injects before every agent call:
 - Vote format reinforcement (if previous parse failed)
 - Scum-tell flags from BeliefGraph
 - Temporal slip warnings
-- Iroh Protocol graduated reveal instructions
+- Last Stand Protocol graduated reveal instructions
 - Vote coordination note (during DAY_VOTE phase)
 
 **`CrossGameMemoryProvider`** (ContextProvider):
@@ -812,7 +812,7 @@ python -m unittest tests.test_refactor -v
 | Vote parsing                | 3       | 16    | Self-vote prevention, intent parsing, tie-break logic  |
 | Personality constraints     | 7       | 24    | Tier 1/2/3 bans, frequency caps, cap relaxation       |
 | Action parsing              | 4       | 16    | REASONING/ACTION split, tool trace normalisation       |
-| Belief state                | 7       | 35    | Suspicion, staleness, Iroh Protocol, overconfidence    |
+| Belief state                | 7       | 35    | Suspicion, staleness, Last Stand Protocol, overconfidence    |
 | Session resilience          | 8       | 30    | Session recovery, rate limiting, health monitoring     |
 | Game state                  | 7       | 40    | Win conditions, elimination, night actions, voting     |
 | Prompt structure            | 5       | 18    | Discussion rules, voice markers, slang register        |
@@ -878,7 +878,7 @@ Uniform prior  →  Agent reasons  →  BELIEF_UPDATE parsed  →  SuspicionStat
  num_alive)        block                                       ├→ Staleness check
                                                                ├→ Overconfidence gate
                                                                ├→ Vote recommendation
-                                                               └→ Iroh Protocol check
+                                                               └→ Last Stand Protocol check
 ```
 
 ---
@@ -932,7 +932,7 @@ Response ←  ResilientSession  ←  RateLimit  ←  corporate_speak  ←  Reaso
 [Vote format reinforcement if previous parse failed]
 [Scum-tell flags from BeliefGraph]
 [Temporal slip warnings from TemporalConsistencyChecker]
-[Iroh Protocol instructions if suspicion exceeds threshold]
+[Last Stand Protocol instructions if suspicion exceeds threshold]
 [Vote coordination note if in DAY_VOTE phase]
 ```
 

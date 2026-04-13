@@ -373,7 +373,7 @@ python -m unittest tests.test_refactor -v
 | Vote parsing               | 16    | Self-vote prevention, intent detection, tie-break           |
 | Personality constraints    | 24    | All 3 ban tiers, frequency caps, cap relaxation             |
 | Action parsing             | 16    | REASONING/ACTION split, tool responses, edge cases          |
-| Belief state               | 35    | Suspicion tracking, staleness, Iroh Protocol, overconfidence |
+| Belief state               | 35    | Suspicion tracking, staleness, Last Stand Protocol, overconfidence |
 | Session resilience         | 30    | Session recovery, rate limits, health monitoring            |
 | Game state                 | 40    | Win conditions, elimination, night actions, voting          |
 | Prompt structure           | 18    | Discussion rules, voice markers, slang register             |
@@ -444,9 +444,9 @@ Here's what each file does and when you'd need to look at it:
 
 **Mafia** (2 players) — Know each other. Coordinate via the "Syndicate Channel" (shared reasoning). Must kill Town without being identified. Appear as Town during the day.
 
-**Detective** (1 player) — Investigates one player per night, learning if they are Mafia or Innocent. Vote counts double. Can reveal findings publicly. Has the Iroh Protocol for emergency self-preservation.
+**Detective** (1 player) — Investigates one player per night, learning if they are Mafia or Innocent. Vote counts double. Can reveal findings publicly. Has the Last Stand Protocol for emergency self-preservation.
 
-**Doctor** (1 player) — Protects one player per night from being killed. Cannot protect the same player two nights in a row. Has the Iroh Protocol.
+**Doctor** (1 player) — Protects one player per night from being killed. Cannot protect the same player two nights in a row. Has the Last Stand Protocol.
 
 **Villager** (7 players) — No special abilities. Must identify Mafia through discussion and voting. Tracks vote patterns for anti-Mafia-steering.
 
@@ -489,13 +489,13 @@ Personalities control **only** communication style. They have zero effect on str
 
 Each agent carries a `SuspicionState` — a dictionary of player names to suspicion scores (0.0 = definitely innocent, 1.0 = definitely Mafia). This is "structured intuition" — the agent assigns numbers based on conversational evidence, and the system uses those numbers for:
 - Vote recommendations
-- Iroh Protocol triggers
+- Last Stand Protocol triggers
 - Overconfidence gating
 - Graceful degradation fallbacks
 
-### The Iroh Protocol
+### The Last Stand Protocol
 
-Named after Uncle Iroh from Avatar. When a Detective or Doctor is about to be eliminated (other agents collectively suspect them), the system instructs them to reveal their role to survive. Three graduated levels:
+When a Detective or Doctor is about to be eliminated (other agents collectively suspect them), the system instructs them to reveal their role to survive. Three graduated levels:
 - **Soft Hint** (suspicion ≥ 0.35) — Hint at having information
 - **Hard Claim** (suspicion ≥ 0.45) — Claim role conditionally
 - **Full Reveal** (suspicion ≥ 0.55) — Reveal role with all evidence
@@ -628,7 +628,7 @@ python main.py --debug
 This shows every agent's complete REASONING block. Look for:
 - `BELIEF_UPDATE:` tags — how the agent is updating suspicion scores
 - Mafia Threat Check answers — whether Mafia agents are maintaining cover
-- Iroh Protocol mentions — whether special roles are considering reveal
+- Last Stand Protocol mentions — whether special roles are considering reveal
 - Frustration state — whether an agent is stuck in a reasoning loop
 
 ### Reproduce a Game
@@ -838,7 +838,7 @@ The game continues without crashing.
 | **Graceful Degradation**    | Fallback behaviour when API calls fail                                        |
 | **Independent Archetype**   | Contrarian/Analytical/Impulsive/Stubborn — floor of 2 per game                |
 | **Instahammer**             | Casting a decisive vote before discussion occurs — a scum tell                |
-| **Iroh Protocol**           | Graduated role-reveal system for at-risk Detective/Doctor                     |
+| **Last Stand Protocol**           | Graduated role-reveal system for at-risk Detective/Doctor                     |
 | **Late Bandwagon**          | Joining a vote majority without adding reasoning — a scum tell                |
 | **MAF**                     | Microsoft Agent Framework                                                     |
 | **Middleware**               | MAF middleware — cross-cutting concerns (resilience, parsing, enforcement)    |

@@ -6,7 +6,7 @@ How MafiaFramework makes AI agents play a social deduction game — and why ever
 
 ## TL;DR
 
-MafiaFramework drops 11 LLM agents into a Mafia game where each agent has a randomised role, strategic archetype, performance personality, and language model. Agents maintain structured belief states (suspicion scores 0.0–1.0) instead of raw free-text reasoning, use middleware for error recovery and rate limiting, and accumulate cross-game memory. The prompt engineering stack layers role goals → reasoning frameworks → archetype modifiers → personality registers → anti-AI constraints so agents sound like distinct humans rather than corporate chatbots. A 3-tier combination ban system prevents broken archetype–personality pairings, and a graduated Iroh Protocol lets at-risk special roles reveal themselves before dying uselessly.
+MafiaFramework drops 11 LLM agents into a Mafia game where each agent has a randomised role, strategic archetype, performance personality, and language model. Agents maintain structured belief states (suspicion scores 0.0–1.0) instead of raw free-text reasoning, use middleware for error recovery and rate limiting, and accumulate cross-game memory. The prompt engineering stack layers role goals → reasoning frameworks → archetype modifiers → personality registers → anti-AI constraints so agents sound like distinct humans rather than corporate chatbots. A 3-tier combination ban system prevents broken archetype–personality pairings, and a graduated Last Stand Protocol lets at-risk special roles reveal themselves before dying uselessly.
 
 ---
 
@@ -26,7 +26,7 @@ Imagine 11 kids playing Mafia at a sleepover, except every kid is actually an AI
 - [Error Recovery Philosophy](#error-recovery-philosophy)
 - [Vote Coordination Pipeline](#vote-coordination-pipeline)
 - [Scum-Tell Detection](#scum-tell-detection)
-- [The Iroh Protocol](#the-iroh-protocol)
+- [The Last Stand Protocol](#the-last-stand-protocol)
 - [Cross-Game Learning](#cross-game-learning)
 - [Combination Ban Methodology](#combination-ban-methodology)
 - [Anti-AI Writing Enforcement](#anti-ai-writing-enforcement)
@@ -51,7 +51,7 @@ The actual game dynamics — alliances, accusations, betrayals — emerge from t
 
 ### 2. Structured Intuition Over Bayesian Inference
 
-Agent belief tracking is **not** Bayesian probability. It is "structured intuition" — the LLM assigns suspicion scores (0.0–1.0) based on conversational evidence, then the system uses those scores for downstream decisions (vote guidance, Iroh Protocol triggers, overconfidence gating). This is a deliberate design choice:
+Agent belief tracking is **not** Bayesian probability. It is "structured intuition" — the LLM assigns suspicion scores (0.0–1.0) based on conversational evidence, then the system uses those scores for downstream decisions (vote guidance, Last Stand Protocol triggers, overconfidence gating). This is a deliberate design choice:
 - LLMs are bad at rigorous probability math
 - LLMs are good at "this person seems suspicious because X"
 - The system anchors that intuition in a numeric format so it can be reasoned about programmatically
@@ -195,13 +195,13 @@ Reusable strategic thinking modules, routed per role and archetype:
 
 **Detective:**
 - **Claim Protocol** — Mandatory red-check announcement
-- **Iroh Protocol** — Graduated identity reveal (see below)
+- **Last Stand Protocol** — Graduated identity reveal (see below)
 - **Red Check Reveal Strategy** — When and how to share investigation results
 - **Vote Pattern Analysis** — Lone divergent vote detection, voting bloc tracking
 
 **Doctor:**
 - **Value-Protection Heuristic** — Protect the reasoner (evidence-based predictions, bandwagon resistance), not the loudest voice
-- **Iroh Protocol** — Graduated identity reveal
+- **Last Stand Protocol** — Graduated identity reveal
 
 **Villager:**
 - **Voter Consistency** — Anti-Mafia-steering tool: track vote blocs, last-moment switches, lone divergent votes
@@ -349,9 +349,9 @@ The `BeliefGraph` runs three behavioural pattern detectors each round:
 
 ---
 
-## The Iroh Protocol
+## The Last Stand Protocol
 
-Named after Uncle Iroh from Avatar — the wise character who reveals his true power only when absolutely necessary.
+When a Detective or Doctor is about to be eliminated, revealing their role is the only play that helps Town. The Last Stand Protocol automates this decision with graduated thresholds.
 
 ### Problem
 Detectives and Doctors who die without revealing their role waste their team's most valuable information. But revealing too early makes them an instant Mafia target.

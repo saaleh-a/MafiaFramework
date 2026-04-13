@@ -2509,7 +2509,7 @@ class TestGameStateLogging(unittest.TestCase):
 
 
 # ===================================================================== #
-#  SuspicionState: belief tracking, staleness, Iroh Protocol            #
+#  SuspicionState: belief tracking, staleness, Last Stand Protocol     #
 # ===================================================================== #
 
 class TestSuspicionStateBasics(unittest.TestCase):
@@ -2619,8 +2619,8 @@ class TestSuspicionStateStaleness(unittest.TestCase):
         self.assertFalse(s.is_frustrated)
 
 
-class TestIrohProtocol(unittest.TestCase):
-    """Graduated Iroh Protocol reveal logic."""
+class TestLastStandProtocol(unittest.TestCase):
+    """Graduated Last Stand Protocol reveal logic."""
 
     def _make_beliefs(self, suspicion_of_target: float) -> dict[str, "SuspicionState"]:
         from agents.belief_state import SuspicionState
@@ -2639,33 +2639,33 @@ class TestIrohProtocol(unittest.TestCase):
         from agents.belief_state import SuspicionState
         beliefs = self._make_beliefs(0.2)
         target_belief = beliefs["Target"]
-        self.assertIsNone(target_belief.get_iroh_level("Target", beliefs))
+        self.assertIsNone(target_belief.get_last_stand_level("Target", beliefs))
 
     def test_soft_hint_at_035(self):
         beliefs = self._make_beliefs(0.36)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "soft_hint"
         )
 
     def test_hard_claim_at_045(self):
         beliefs = self._make_beliefs(0.46)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "hard_claim"
         )
 
     def test_full_reveal_at_055(self):
         beliefs = self._make_beliefs(0.56)
         self.assertEqual(
-            beliefs["Target"].get_iroh_level("Target", beliefs),
+            beliefs["Target"].get_last_stand_level("Target", beliefs),
             "full_reveal"
         )
 
     def test_red_check_lowers_thresholds(self):
         beliefs = self._make_beliefs(0.30)  # Below normal soft_hint (0.35)
         # With red-check adjustment (-0.10), threshold becomes 0.25
-        level = beliefs["Target"].get_iroh_level(
+        level = beliefs["Target"].get_last_stand_level(
             "Target", beliefs, has_red_check=True,
         )
         self.assertEqual(level, "soft_hint")
