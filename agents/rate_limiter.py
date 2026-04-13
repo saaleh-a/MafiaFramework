@@ -88,11 +88,12 @@ def _is_timeout_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     if "timeout" in msg or "timed out" in msg:
         return True
-    # Azure CLI credential failures — subprocess hangs or token unavailable
-    if "credentialunavailable" in msg or "credential" in msg:
+    # Azure CLI credential failures — subprocess hangs or token unavailable.
+    # Match specific unavailability indicators, not generic credential errors.
+    if "credentialunavailable" in msg:
         return True
-    cls_name = type(exc).__name__.lower()
-    if "credential" in cls_name:
+    cls_name = type(exc).__name__
+    if cls_name == "CredentialUnavailableError":
         return True
     return False
 

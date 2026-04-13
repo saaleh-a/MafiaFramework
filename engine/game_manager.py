@@ -180,7 +180,6 @@ def _pick_personality_constrained(
         # exclusion tables, but degrade gracefully instead of crashing:
         # return a random personality from the full pool, ignoring all
         # exclusions.  A mismatched personality is better than no game.
-        import sys
         print(
             f"  [⚠] Personality pool exhausted for role={role} "
             f"archetype={archetype} — selecting random personality "

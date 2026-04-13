@@ -324,7 +324,7 @@ class MafiaGameOrchestrator:
         # reasoning over herd following.
         if self.gs.round_number <= 2 and confidence < MAFIA_VOTE_CONFIDENCE_THRESHOLD:
             note.append(
-                "⚠ EARLY GAME WARNING: It is round " + str(self.gs.round_number) + ". "
+                f"⚠ EARLY GAME WARNING: It is round {self.gs.round_number}. "
                 "There is very little evidence yet. The consensus is based on "
                 "first impressions, not confirmed information. Do NOT default to "
                 "the room's direction just because others are voting that way. "

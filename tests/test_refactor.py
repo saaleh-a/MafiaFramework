@@ -3783,6 +3783,13 @@ class TestCredentialErrorDetection(unittest.TestCase):
         exc = CredentialUnavailableError("token acquisition failed")
         self.assertTrue(_is_timeout_error(exc))
 
+    def test_generic_credential_error_not_false_positive(self):
+        """Generic credential errors (e.g., bad password) should NOT be
+        classified as timeout errors — only unavailability."""
+        from agents.rate_limiter import _is_timeout_error
+        exc = Exception("Invalid credentials provided for authentication")
+        self.assertFalse(_is_timeout_error(exc))
+
     def test_az_timeout_detected(self):
         from agents.rate_limiter import _is_timeout_error
         exc = Exception("AzureCliCredential process timed out")
