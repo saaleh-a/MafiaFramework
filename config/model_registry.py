@@ -43,21 +43,6 @@ AVAILABLE_MODELS: list[ModelConfig] = [
         model_id=_primary_model,
         short="54m",
     ),
-    ModelConfig(
-        name=_display_name("grok-4-1-fast-reasoning"),
-        model_id="grok-4-1-fast-reasoning",
-        short="grk",
-    ),
-    ModelConfig(
-        name=_display_name("gpt-4o-mini"),
-        model_id="gpt-4o-mini",
-        short="4om",
-    ),
-    ModelConfig(
-        name=_display_name("model-router"),
-        model_id="model-router",
-        short="rtr",
-    ),
 ]
 
 
