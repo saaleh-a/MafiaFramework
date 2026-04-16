@@ -17,11 +17,14 @@ v4 changes (from v3):
   - Corporate-speak enforcement moved from base.py retry to agent middleware
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
 import re
 import sys
+from typing import Any
 from engine.game_state import GameState, GamePhase
 from engine.game_log import (
     print_phase_header, print_agent_action,
@@ -83,7 +86,7 @@ class MafiaGameOrchestrator:
         self.quiet     = quiet
         self._memory   = memory_store
         self._assignments = assignments or []
-        self._agents: dict[str, any] = {}
+        self._agents: dict[str, Any] = {}
         for a in mafia_agents + [detective, doctor] + villagers:
             self._agents[a.name] = a
 
@@ -735,7 +738,9 @@ class MafiaGameOrchestrator:
                         player,
                     ),
                 )
-                if len(evasion_ranked) == 1 or (
+                if len(evasion_ranked) == 1:
+                    eliminated = evasion_ranked[0]
+                elif len(evasion_ranked) >= 2 and (
                     self._belief_graph.evasion_scores.get(evasion_ranked[0], 0)
                     > self._belief_graph.evasion_scores.get(evasion_ranked[1], 0)
                 ):

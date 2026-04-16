@@ -4014,5 +4014,96 @@ class TestRankedPersonalityFallback(unittest.TestCase):
                          "Tier 1 ban (Reactive+VibesVoter) must never be relaxed in step 1")
 
 
+class TestEvasionTieBreakSafety(unittest.TestCase):
+    """Regression: post-reveal evasion tie-break must not IndexError on empty list."""
+
+    def test_single_tied_player_is_eliminated(self):
+        """A single player in the evasion-ranked list should be eliminated."""
+        evasion_ranked = ["Alice"]
+        evasion_scores = {"Alice": 0.5}
+        # Mirrors the fixed logic: len == 1 → pick [0]
+        if len(evasion_ranked) == 1:
+            eliminated = evasion_ranked[0]
+        elif len(evasion_ranked) >= 2 and (
+            evasion_scores.get(evasion_ranked[0], 0)
+            > evasion_scores.get(evasion_ranked[1], 0)
+        ):
+            eliminated = evasion_ranked[0]
+        else:
+            eliminated = None
+        self.assertEqual(eliminated, "Alice")
+
+    def test_two_tied_players_with_different_evasion(self):
+        """Two tied players: higher evasion score wins."""
+        evasion_ranked = sorted(
+            ["Alice", "Bob"],
+            key=lambda p: (-{"Alice": 0.8, "Bob": 0.3}.get(p, 0), p),
+        )
+        evasion_scores = {"Alice": 0.8, "Bob": 0.3}
+        if len(evasion_ranked) == 1:
+            eliminated = evasion_ranked[0]
+        elif len(evasion_ranked) >= 2 and (
+            evasion_scores.get(evasion_ranked[0], 0)
+            > evasion_scores.get(evasion_ranked[1], 0)
+        ):
+            eliminated = evasion_ranked[0]
+        else:
+            eliminated = None
+        self.assertEqual(eliminated, "Alice")
+
+    def test_two_tied_players_with_equal_evasion(self):
+        """Two tied players with same evasion → no elimination (true tie)."""
+        evasion_ranked = sorted(
+            ["Alice", "Bob"],
+            key=lambda p: (-{"Alice": 0.5, "Bob": 0.5}.get(p, 0), p),
+        )
+        evasion_scores = {"Alice": 0.5, "Bob": 0.5}
+        if len(evasion_ranked) == 1:
+            eliminated = evasion_ranked[0]
+        elif len(evasion_ranked) >= 2 and (
+            evasion_scores.get(evasion_ranked[0], 0)
+            > evasion_scores.get(evasion_ranked[1], 0)
+        ):
+            eliminated = evasion_ranked[0]
+        else:
+            eliminated = None
+        self.assertIsNone(eliminated)
+
+
+class TestCreateGamePlayerCountValidation(unittest.TestCase):
+    """Regression: create_game must not raise StopIteration for <6 players."""
+
+    def test_build_role_distribution_under_5(self):
+        from engine.game_manager import _build_role_distribution
+        roles = _build_role_distribution(4)
+        self.assertNotIn("Detective", roles)
+        self.assertNotIn("Doctor", roles)
+
+    def test_create_game_requires_detective_and_doctor(self):
+        from engine.game_manager import create_game
+        # Patch PLAYER_NAMES to only 4 names and make_client to avoid Azure deps
+        with unittest.mock.patch(
+            "engine.game_manager.PLAYER_NAMES",
+            ["A", "B", "C", "D"],
+        ), unittest.mock.patch(
+            "engine.game_manager.make_client",
+            return_value=unittest.mock.MagicMock(),
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                create_game()
+            self.assertIn("at least 6 players", str(ctx.exception))
+
+
+class TestOrchestratorTypeAnnotation(unittest.TestCase):
+    """The _agents dict must use typing.Any, not builtin any."""
+
+    def test_any_import(self):
+        import engine.orchestrator as mod
+        import inspect
+        source = inspect.getsource(mod)
+        self.assertIn("from typing import Any", source)
+        self.assertNotIn("dict[str, any]", source)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -289,9 +289,15 @@ def create_game(narrator_model: ModelConfig | None = None, demo: bool = False) -
 
     # 6. Identify role assignments
     mafia_names    = [n for n, r in role_map.items() if r == "Mafia"]
-    detective_name = next(n for n, r in role_map.items() if r == "Detective")
-    doctor_name    = next(n for n, r in role_map.items() if r == "Doctor")
+    detective_name = next((n for n, r in role_map.items() if r == "Detective"), None)
+    doctor_name    = next((n for n, r in role_map.items() if r == "Doctor"), None)
     villager_names = [n for n, r in role_map.items() if r == "Villager"]
+
+    if detective_name is None or doctor_name is None:
+        raise ValueError(
+            f"Game requires at least 6 players (got {len(names)}). "
+            f"Detective and Doctor roles are mandatory."
+        )
 
     # 7. Instantiate agents
     narrator  = NarratorAgent(narrator_cl)
